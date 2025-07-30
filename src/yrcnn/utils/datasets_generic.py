@@ -29,7 +29,6 @@ from datasets import DatasetDict, load_dataset
 from PIL import Image
 
 
-# ---------------------------------------------------------------------------
 
 
 def _auto_try_builders(
@@ -50,9 +49,9 @@ def _auto_try_builders(
                 **hf_kw,
             )
             return ds_split, b
-        except Exception as exc:  # noqa: BLE001  (broad but *intentional*)
+        except Exception as exc:
             last_exc = exc
-    # Nothing worked …
+
     raise RuntimeError(
         f"None of the builders {builders_to_try} worked for split "
         f"'{split}' of '{repo_id}'. Last error was:\n{last_exc}"

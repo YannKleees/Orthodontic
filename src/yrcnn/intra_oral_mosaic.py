@@ -7,7 +7,7 @@ Created on Tue Apr  1 10:24:03 2025
 
 import os
 from pathlib import Path
-
+import argparse
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt   # ← import kept in case you plot later
@@ -72,12 +72,17 @@ def process_images(input_folder: str, output_folder: str) -> None:
                 img = cv2.imread(views[view], cv2.IMREAD_COLOR)
                 img = pad_and_resize(img)
                 grid[y:y + BASE_HEIGHT, x:x + BASE_WIDTH] = img
-
-        cv2.imwrite(os.path.join(output_folder, f"{key}.png"), grid)
+        if len(set(views.keys()) & {"right","center","left","up","down"}) >= 4:
+            cv2.imwrite(os.path.join(output_folder, f"{key}_mosaic.png"), grid)
 
 
 if __name__ == "__main__":
-    batch_root     = os.path.join("JPB", "third_batch")
-    input_folder   = os.path.join(batch_root, "intra_oral_images")
-    output_folder  = os.path.join(batch_root, "grid_layout_all")
-    process_images(input_folder, output_folder)
+    import argparse, sys, os
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--input", required=True)
+    ap.add_argument("--output", required=True)
+    args = ap.parse_args()
+    if not os.path.isdir(args.input):
+        sys.exit("Input folder does not exist")
+    process_images(args.input, args.output)
+

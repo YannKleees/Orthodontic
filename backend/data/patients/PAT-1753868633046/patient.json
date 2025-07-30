@@ -1,0 +1,36 @@
+{
+  "id": "PAT-1753868633046",
+  "createdAt": "2025-07-30T09:43:53.047Z",
+  "status": "Active",
+  "visits": [
+    {
+      "id": "visit-1753868650037-g39ru",
+      "date": "2025-07-30T09:44:12.240Z",
+      "status": "completed",
+      "mosaicUrl": "http://localhost:8000/static/patients/PAT-1753868633046/visits/visit-1753868650037-g39ru/mosaic.png",
+      "parScore": 0
+    },
+    {
+      "id": "visit-1753868801818-9rocc",
+      "date": "2025-07-30T09:46:43.979Z",
+      "status": "completed",
+      "mosaicUrl": "http://localhost:8000/static/patients/PAT-1753868633046/visits/visit-1753868801818-9rocc/mosaic.png",
+      "parScore": 0
+    },
+    {
+      "id": "visit-1753868962910-2rhgf",
+      "date": "2025-07-30T09:49:25.087Z",
+      "status": "completed",
+      "mosaicUrl": "http://localhost:8000/static/patients/PAT-1753868633046/visits/visit-1753868962910-2rhgf/mosaic.png",
+      "parScore": 0
+    }
+  ],
+  "age": 20,
+  "currentPARScore": 0,
+  "parScore": 0,
+  "treatmentUrgency": "low",
+  "totalVisits": 3,
+  "lastVisitDate": "2025-07-30T09:49:25.087Z",
+  "name": "Célina Thill",
+  "dateOfBirth": "2004-11-07"
+}

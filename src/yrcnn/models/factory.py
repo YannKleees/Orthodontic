@@ -4,14 +4,15 @@ of the codebase picks it up automatically.
 """
 from __future__ import annotations
 from typing import Callable, Dict, Any
-
-from .yolo import build as _build_yolo
-from .rcnn import build as _build_rcnn
+from .yolo       import build as _build_yolo
+from .rcnn       import build as _build_rcnn
+from .rcnn_par   import build as _build_rcnn_par
 
 _BUILDERS: Dict[str, Callable[..., Any]] = {
-    "yolo": _build_yolo,
-    "rcnn": _build_rcnn,
-    "fasterrcnn_resnet50_fpn": _build_rcnn,
+    "yolo":                       _build_yolo,
+    "rcnn":                       _build_rcnn,
+    "fasterrcnn_resnet50_fpn":    _build_rcnn,
+    "fasterrcnn_resnet50_fpn_par": _build_rcnn_par,
 }
 
 def available() -> list[str]:
