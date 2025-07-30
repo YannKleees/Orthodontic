@@ -1,0 +1,22 @@
+{
+  "id": "PAT-1753872385333",
+  "createdAt": "2025-07-30T10:46:25.333Z",
+  "status": "Active",
+  "visits": [
+    {
+      "id": "visit-1753872403949-rkg4e",
+      "date": "2025-07-30T10:46:46.578Z",
+      "status": "completed",
+      "mosaicUrl": "http://localhost:8000/static/patients/PAT-1753872385333/visits/visit-1753872403949-rkg4e/mosaic.png",
+      "parScore": 0
+    }
+  ],
+  "age": 21,
+  "currentPARScore": 0,
+  "parScore": 0,
+  "treatmentUrgency": "low",
+  "totalVisits": 1,
+  "lastVisitDate": "2025-07-30T10:46:46.578Z",
+  "name": "Yann Klees",
+  "dateOfBirth": "2004-04-03"
+}

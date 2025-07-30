@@ -1,0 +1,9 @@
+{
+  "id": "visit-1753868801818-9rocc",
+  "patientId": "PAT-1753868633046",
+  "date": "2025-07-30T09:46:43.979Z",
+  "status": "completed",
+  "parScore": 0,
+  "mosaicUrl": "http://localhost:8000/static/patients/PAT-1753868633046/visits/visit-1753868801818-9rocc/mosaic.png",
+  "boxes": []
+}

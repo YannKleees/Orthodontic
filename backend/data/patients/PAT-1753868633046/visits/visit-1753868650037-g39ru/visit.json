@@ -1,0 +1,28 @@
+{
+  "id": "visit-1753868650037-g39ru",
+  "patientId": "PAT-1753868633046",
+  "date": "2025-07-30T09:44:12.240Z",
+  "status": "completed",
+  "parScore": 24,
+  "mosaicUrl": "http://localhost:8000/static/patients/PAT-1753868633046/visits/visit-1753868650037-g39ru/mosaic.png",
+  "boxes": [
+    {
+      "id": "comp-1753868675266",
+      "component": "Overjet",
+      "toothRegion": "New region",
+      "score": 4,
+      "maxScore": 4,
+      "confidence": 100,
+      "coordinates": {
+        "x": 437,
+        "y": 132,
+        "width": 41,
+        "height": 46
+      },
+      "viewId": "centre",
+      "editable": true,
+      "modifiedBy": "frontend",
+      "lastModified": "2025-07-30T09:44:46.453Z"
+    }
+  ]
+}

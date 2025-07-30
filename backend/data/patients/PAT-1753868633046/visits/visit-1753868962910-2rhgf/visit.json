@@ -1,0 +1,46 @@
+{
+  "id": "visit-1753868962910-2rhgf",
+  "patientId": "PAT-1753868633046",
+  "date": "2025-07-30T09:49:25.087Z",
+  "status": "completed",
+  "parScore": 7,
+  "mosaicUrl": "http://localhost:8000/static/patients/PAT-1753868633046/visits/visit-1753868962910-2rhgf/mosaic.png",
+  "boxes": [
+    {
+      "id": "comp-1753868973081",
+      "component": "Overjet",
+      "toothRegion": "New region",
+      "score": 1,
+      "maxScore": 4,
+      "confidence": 100,
+      "coordinates": {
+        "x": 436,
+        "y": 122,
+        "width": 36,
+        "height": 57
+      },
+      "viewId": "centre",
+      "editable": true,
+      "modifiedBy": "frontend",
+      "lastModified": "2025-07-30T09:49:57.049Z"
+    },
+    {
+      "id": "comp-1753868999843",
+      "component": "Upper Crowding",
+      "toothRegion": "New region",
+      "score": 1,
+      "maxScore": 5,
+      "confidence": 100,
+      "coordinates": {
+        "x": 61,
+        "y": 209,
+        "width": 80,
+        "height": 60
+      },
+      "viewId": "centre",
+      "editable": true,
+      "modifiedBy": "frontend",
+      "lastModified": "2025-07-30T09:50:09.667Z"
+    }
+  ]
+}
