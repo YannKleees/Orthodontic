@@ -1,3 +1,32 @@
+/**
+ * @file MosaicFullscreen.tsx
+ * @brief
+ *   Full-screen PAR editing workspace. Renders a single mosaic image with
+ *   overlayed PAR components (axis-aligned rectangles) and provides
+ *   direct-manipulation tools (move/resize/add/delete) in a fixed, model-space
+ *   coordinate system.
+ *
+ * @rationale
+ *   The mosaic is treated as the canonical reference frame. All bounding-boxes
+ *   persist in “natural” pixel coordinates (MOSAIC_WIDTH × MOSAIC_HEIGHT) to
+ *   avoid cumulative rounding errors from repeated CSS transforms. UI scale and
+ *   rotation are applied visually; the stored geometry remains invariant.
+ *
+ * @interaction-model
+ *   • Edit Mode toggles a small tool-palette: Move (drag), Resize (corner handles),
+ *     Add (click to insert default box), Delete (click to remove).
+ *   • Drag operations are parameterized by (startX, startY, startCoords),
+ *     updated by deltas in client space, then clamped to model bounds.
+ *   • Score/type edits are performed through an inline modal; maxScore derives
+ *     from the selected component taxonomy.
+ *
+ * @invariants
+ *   • All coordinates are clamped to [0, W] × [0, H].
+ *   • Rotation is visual only (no change to stored coordinates).
+ *   • Percent-based CSS positioning is computed from model space, keeping
+ *     layouts DPI-independent and responsive.
+ */
+
 import { useState, useEffect } from "react";
 import {
   RotateCw,
@@ -19,6 +48,7 @@ import { cn } from "../lib/utils";
 import { usePARComponentsContext } from "../hooks/usePARComponentsContext";
 import { useVisitDetail } from "@/hooks/useApi";
 import { mosaicUrl }       from "@/lib/paths";
+
 interface PAR_Component {
   id: string;
   component:
@@ -46,13 +76,16 @@ interface MosaicFullscreenProps {
   visitId     : string;
 }
 
+/**
+ * Lightweight metadata for header display when a real visit is not yet wired.
+ * Keeps UI predictable during early integration.
+ */
 export function getMosaicData(patientName: string) {
-  /* stub until the real generator is wired */
   return {
     title   : "Latest visit",
     date    : new Date().toISOString().slice(0,10),
     visitId : "dummy",
-    imageUrl: "/placeholder/mosaic.png",   //  ← NEW
+    imageUrl: "/placeholder/mosaic.png",
   };
 }
 
@@ -71,6 +104,7 @@ export function MosaicFullscreen({
 
   const { data: visit, loading } = useVisitDetail(visitId);
 
+  /** Visual state (does not alter persisted geometry). */
   const [rotation,        setRotation]        = useState(0);
   const [editMode,        setEditMode]        = useState(false);
   const [selectedView,    setSelectedView]    = useState("centre");
@@ -78,11 +112,20 @@ export function MosaicFullscreen({
   const [editingComponent,setEditingComponent]= useState<string|null>(null);
   const [editScore,       setEditScore]       = useState(0);
   const [editComponentType,setEditComponentType]=useState("");
-  
-  // Define constants for the coordinate system (the original values used in the backend)
+
+  /**
+   * Canonical model-space resolution used by the backend. All boxes are stored
+   * and updated in this space; percentages for CSS are derived from it.
+   */
   const MOSAIC_WIDTH = 600;
   const MOSAIC_HEIGHT = 400;
-  
+
+  /**
+   * Drag/resize state:
+   *  - startCoords caches immutable starting rectangle,
+   *  - (startX, startY) are client pixels at mouse down,
+   *  - mode/resizeHandle determine update rule.
+   */
   const [dragState, setDragState] = useState<{
        isDragging: boolean;
        componentId: string | null;
@@ -101,6 +144,7 @@ export function MosaicFullscreen({
        startCoords: null,
    });
 
+  /** Registers/unregisters global listeners only while dragging is active. */
   useEffect(() => {
     if (!dragState.isDragging) return;
     window.addEventListener("mousemove", handleMouseMove);
@@ -109,13 +153,17 @@ export function MosaicFullscreen({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup",   handleMouseUp);
     };
-  }, [dragState.isDragging]);          // only cares about the boolean
+  }, [dragState.isDragging]);
 
-  /* ───── early return – after every hook above ───── */
+  /* Early exits after hooks are settled for predictable render flow. */
   if (loading) return <p className="p-6">Loading…</p>;
   if (!visit)  return <p className="p-6 text-red-600">Visit not found.</p>;
 
-  // Mouse event handlers
+  /**
+   * Mouse down begins an interaction episode. We capture starting client
+   * coordinates and a snapshot of the rectangle; subsequent motion applies
+   * deltas and clamps in model space.
+   */
   const handleMouseDown = (
     e: React.MouseEvent,
     componentId: string,
@@ -128,8 +176,6 @@ export function MosaicFullscreen({
     const component = parComponents.find((c) => c.id === componentId);
     if (!component || !editMode) return;
 
-    console.log("Starting drag:", { componentId, mode, handle });
-
     setDragState({
       isDragging: true,
       componentId,
@@ -141,6 +187,12 @@ export function MosaicFullscreen({
     });
   };
 
+  /**
+   * Mouse move applies delta updates per interaction mode:
+   *  - Move: translate (x,y) with clamping to keep box fully in-frame.
+   *  - Resize: modify width/height from a handle while maintaining non-negativity
+   *            and minimum size constraints; also clamp to mosaic bounds.
+   */
   const handleMouseMove = (e: MouseEvent) => {
     if (
       !dragState.isDragging ||
@@ -157,78 +209,53 @@ export function MosaicFullscreen({
       let newCoords = { ...startCoords };
 
       if (dragState.mode === "move") {
-        // Simple move using fixed coordinate system
         newCoords.x = Math.max(0, Math.min(MOSAIC_WIDTH - startCoords.width, startCoords.x + deltaX));
         newCoords.y = Math.max(0, Math.min(MOSAIC_HEIGHT - startCoords.height, startCoords.y + deltaY));
       } else if (dragState.mode === "resize") {
-        // Simple resize
         const minSize = 20;
         const maxSize = 200;
 
         switch (dragState.resizeHandle) {
-          case "se": // Bottom-right
-            newCoords.width = Math.max(
-              minSize,
-              Math.min(maxSize, startCoords.width + deltaX),
-            );
-            newCoords.height = Math.max(
-              minSize,
-              Math.min(maxSize, startCoords.height + deltaY),
-            );
+          case "se":
+            newCoords.width = Math.max(minSize, Math.min(maxSize, startCoords.width + deltaX));
+            newCoords.height = Math.max(minSize, Math.min(maxSize, startCoords.height + deltaY));
             break;
-          case "sw": // Bottom-left
-            const newWidth = Math.max(
-              minSize,
-              Math.min(maxSize, startCoords.width - deltaX),
-            );
+          case "sw": {
+            const newWidth = Math.max(minSize, Math.min(maxSize, startCoords.width - deltaX));
             newCoords.width = newWidth;
-            newCoords.height = Math.max(
-              minSize,
-              Math.min(maxSize, startCoords.height + deltaY),
-            );
+            newCoords.height = Math.max(minSize, Math.min(maxSize, startCoords.height + deltaY));
             newCoords.x = startCoords.x + (startCoords.width - newWidth);
             break;
-          case "ne": // Top-right
-            newCoords.width = Math.max(
-              minSize,
-              Math.min(maxSize, startCoords.width + deltaX),
-            );
-            const newHeight = Math.max(
-              minSize,
-              Math.min(maxSize, startCoords.height - deltaY),
-            );
+          }
+          case "ne": {
+            newCoords.width = Math.max(minSize, Math.min(maxSize, startCoords.width + deltaX));
+            const newHeight = Math.max(minSize, Math.min(maxSize, startCoords.height - deltaY));
             newCoords.height = newHeight;
             newCoords.y = startCoords.y + (startCoords.height - newHeight);
             break;
-          case "nw": // Top-left
-            const newWidthNW = Math.max(
-              minSize,
-              Math.min(maxSize, startCoords.width - deltaX),
-            );
-            const newHeightNW = Math.max(
-              minSize,
-              Math.min(maxSize, startCoords.height - deltaY),
-            );
+          }
+          case "nw": {
+            const newWidthNW = Math.max(minSize, Math.min(maxSize, startCoords.width - deltaX));
+            const newHeightNW = Math.max(minSize, Math.min(maxSize, startCoords.height - deltaY));
             newCoords.width = newWidthNW;
             newCoords.height = newHeightNW;
             newCoords.x = startCoords.x + (startCoords.width - newWidthNW);
             newCoords.y = startCoords.y + (startCoords.height - newHeightNW);
             break;
+          }
         }
 
-        // Keep within bounds using fixed coordinate system
         newCoords.x = Math.max(0, Math.min(MOSAIC_WIDTH - newCoords.width, newCoords.x));
         newCoords.y = Math.max(0, Math.min(MOSAIC_HEIGHT - newCoords.height, newCoords.y));
       }
 
-      // Update component using context
       updateComponent(dragState.componentId, { coordinates: newCoords });
     }
   };
 
+  /** Completes interaction and clears transient state. */
   const handleMouseUp = () => {
     if (dragState.isDragging) {
-      console.log("Ending drag");
       setDragState({
         isDragging: false,
         componentId: null,
@@ -241,9 +268,10 @@ export function MosaicFullscreen({
     }
   };
 
-  // UI handlers
+  /** Purely visual 90° rotation; underlying coordinates remain unchanged. */
   const handleRotate = () => setRotation((prev) => (prev + 90) % 360);
 
+  /** Opens the score editor with current values for the selected component. */
   const handleEditScore = (componentId: string, currentScore: number) => {
     const component = parComponents.find((c) => c.id === componentId);
     if (component) {
@@ -253,6 +281,7 @@ export function MosaicFullscreen({
     }
   };
 
+  /** Persists score + component type changes; maxScore derived from taxonomy. */
   const handleSaveScore = () => {
     if (editingComponent) {
       updateComponent(editingComponent, {
@@ -266,6 +295,7 @@ export function MosaicFullscreen({
     }
   };
 
+  /** Encodes clinical bounds per component; used by editor and UI validation. */
   const getMaxScoreForComponent = (componentType: string): number => {
     const maxScores: Record<string, number> = {
       "Upper Crowding": 5,
@@ -280,6 +310,7 @@ export function MosaicFullscreen({
     return maxScores[componentType] || 5;
   };
 
+  /** Unweighted totals as displayed; (weighted sum is computed elsewhere). */
   const totalPARScore = parComponents.reduce(
     (sum, comp) => sum + comp.score,
     0,
@@ -289,6 +320,7 @@ export function MosaicFullscreen({
     0,
   );
 
+  /** Visual encodings per component class for rapid pattern recognition. */
   const componentColors = {
     "Upper Crowding": "border-red-500 bg-red-500/20",
     "Lower Crowding": "border-red-500 bg-red-500/20",
@@ -302,9 +334,8 @@ export function MosaicFullscreen({
 
   return (
     <div className="w-full h-full flex bg-gray-50">
-      {/* Main Image Area */}
+      {/* Toolbar + context state */}
       <div className="flex-1 flex flex-col">
-        {/* Toolbar */}
         <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold text-on-surface">
@@ -320,17 +351,16 @@ export function MosaicFullscreen({
               <RotateCw className="w-4 h-4" />
             </Button>
 
-            {/* Edit Toggle */}
+            {/* Edit mode toggle with tool default */}
             <Button
               variant={editMode ? "default" : "outline"}
               size="sm"
               onClick={(e) => {
                 e.preventDefault();
                 const newEditMode = !editMode;
-                console.log("Edit mode toggled:", newEditMode);
                 setEditMode(newEditMode);
                 if (newEditMode) {
-                  setEditTool("move"); // Default to move tool when enabling edit mode
+                  setEditTool("move");
                 }
               }}
               className={cn(
@@ -343,7 +373,7 @@ export function MosaicFullscreen({
               {editMode && <span className="ml-2 text-xs">(Active)</span>}
             </Button>
 
-            {/* Edit Tools */}
+            {/* Tool palette */}
             {editMode && (
               <div className="flex items-center gap-1 border rounded-lg p-1 bg-gray-50">
                 <Button
@@ -351,7 +381,6 @@ export function MosaicFullscreen({
                   variant={editTool === "move" ? "default" : "ghost"}
                   onClick={(e) => {
                     e.preventDefault();
-                    console.log("Move tool clicked");
                     setEditTool("move");
                   }}
                   className="h-10 w-10 p-0 relative"
@@ -367,7 +396,6 @@ export function MosaicFullscreen({
                   variant={editTool === "resize" ? "default" : "ghost"}
                   onClick={(e) => {
                     e.preventDefault();
-                    console.log("Resize tool clicked");
                     setEditTool("resize");
                   }}
                   className="h-10 w-10 p-0 relative"
@@ -383,7 +411,6 @@ export function MosaicFullscreen({
                   variant={editTool === "add" ? "default" : "ghost"}
                   onClick={(e) => {
                     e.preventDefault();
-                    console.log("Add tool clicked");
                     setEditTool("add");
                   }}
                   className="h-10 w-10 p-0 relative"
@@ -399,7 +426,6 @@ export function MosaicFullscreen({
                   variant={editTool === "delete" ? "destructive" : "ghost"}
                   onClick={(e) => {
                     e.preventDefault();
-                    console.log("Delete tool clicked");
                     setEditTool("delete");
                   }}
                   className="h-10 w-10 p-0 relative"
@@ -415,19 +441,16 @@ export function MosaicFullscreen({
           </div>
         </div>
 
-        {/* Image with Overlays */}
+        {/* Image + overlays (percent-based from model coordinates) */}
         <div className="flex-1 flex items-center justify-center p-6 overflow-hidden">
           <div
             className={cn(
               "relative bg-white rounded-lg shadow-lg overflow-hidden",
               editMode && editTool === "add" && "cursor-crosshair",
-              // Add aspect ratio constraint to match the coordinate system
-              "w-full max-w-[800px]" 
+              "w-full max-w-[800px]"
             )}
             style={{
-              // Set a fixed aspect ratio to match MOSAIC_WIDTH:MOSAIC_HEIGHT (3:2)
               aspectRatio: `${MOSAIC_WIDTH} / ${MOSAIC_HEIGHT}`,
-              // Ensure the container is rendered precisely
               contain: 'strict'
             }}
             onClick={(e) => {
@@ -436,10 +459,8 @@ export function MosaicFullscreen({
                 const x = Math.round((e.clientX - rect.left) / rect.width * MOSAIC_WIDTH);
                 const y = Math.round((e.clientY - rect.top) / rect.height * MOSAIC_HEIGHT);
 
-                console.log("Adding component at:", { x, y });
-
                 const newComponent = {
-                  component: "Upper Crowding" as const, // Default type
+                  component: "Upper Crowding" as const,
                   toothRegion: "New region",
                   score: 0,
                   maxScore: 5,
@@ -455,8 +476,6 @@ export function MosaicFullscreen({
                 };
 
                 createComponent(newComponent);
-
-                // Automatically switch to move tool after adding
                 setEditTool("move");
               }
             }}
@@ -467,13 +486,12 @@ export function MosaicFullscreen({
               className="transition-transform duration-200 pointer-events-none object-contain w-full h-full"
               style={{
                 transform: `rotate(${rotation}deg)`,
-                // Add transform origin to ensure consistent rotation
                 transformOrigin: 'center center'
               }}
               draggable={false}
             />
 
-            {/* PAR Component Overlays - Using percentages for position */}
+            {/* Overlay rectangles derived from model-space percentages */}
             {getComponentsByView(selectedView).map((component) => (
               <div
                 key={component.id}
@@ -510,7 +528,7 @@ export function MosaicFullscreen({
                   }
                 }}
               >
-                {/* Component Label - Always visible, clickable to edit only in edit mode */}
+                {/* Clickable label for score/type editing */}
                 <div
                   className={cn(
                     "absolute -top-8 left-0 bg-black text-white text-xs px-2 py-1 rounded whitespace-nowrap transition-colors",
@@ -536,7 +554,7 @@ export function MosaicFullscreen({
                   )}
                 </div>
 
-                {/* Resize Handles - Only in edit mode */}
+                {/* Corner handles shown only during resize tool */}
                 {editMode && editTool === "resize" && (
                   <>
                     <div
@@ -566,7 +584,7 @@ export function MosaicFullscreen({
                   </>
                 )}
 
-                {/* Score Edit Button - Only in edit mode */}
+                {/* Quick access score editor */}
                 {editMode && (
                   <Button
                     size="sm"
@@ -585,7 +603,7 @@ export function MosaicFullscreen({
           </div>
         </div>
 
-        {/* Status Bar */}
+        {/* Status footer with active tool and aggregate totals */}
         <div
           className={cn(
             "border-t border-gray-200 p-4",
@@ -603,12 +621,9 @@ export function MosaicFullscreen({
                 {editMode ? (
                   <>
                     ✏️ Edit Mode Active - {editTool.toUpperCase()} tool selected
-                    {editTool === "move" &&
-                      " (Click and drag components to move)"}
-                    {editTool === "resize" &&
-                      " (Red handles will appear - drag to resize)"}
-                    {editTool === "add" &&
-                      " (Click on image to add new component)"}
+                    {editTool === "move" && " (Click and drag components to move)"}
+                    {editTool === "resize" && " (Red handles will appear - drag to resize)"}
+                    {editTool === "add" && " (Click on image to add new component)"}
                     {editTool === "delete" && " (Click on component to delete)"}
                   </>
                 ) : (
@@ -626,7 +641,7 @@ export function MosaicFullscreen({
         </div>
       </div>
 
-      {/* Enhanced Edit Modal */}
+      {/* Modal for score/type editing (separate from drag/resize loop) */}
       {editingComponent && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
@@ -640,7 +655,6 @@ export function MosaicFullscreen({
                   value={editComponentType}
                   onChange={(e) => {
                     setEditComponentType(e.target.value);
-                    // Reset score when changing type
                     setEditScore(0);
                   }}
                   className="w-full border rounded px-3 py-2 bg-white"

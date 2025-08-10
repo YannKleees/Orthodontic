@@ -1,6 +1,20 @@
 /* ------------------------------------------------------------------ */
-/*  routes/similar‑patients.ts – dynamic cosine similarity            */
+/*  routes/similar-patients.ts – dynamic cosine similarity            */
 /* ------------------------------------------------------------------ */
+/** ============================================================================
+ * Similar Patients API — feature hashing + cosine similarity
+ * =============================================================================
+ * MODEL
+ *  - Feature vector: [age/100, par/50, one-hot(condition_hash∈{0..3})].
+ *  - Similarity: cosine(a,b) ∈ [0,1]; exposed as percentage with 2 decimals.
+ *  - This is a pedagogical baseline (fast, explainable); replace with a
+ *    clinically validated embedding in production (e.g., learned vectors).
+ * FILTERS
+ *  - k: top-k neighbors
+ *  - minSimilarity: threshold pruning
+ * SEARCH
+ *  - POST /search supports cohort gating by age/PAR/outcome prior to ranking.
+ * ============================================================================ */
 import { Router, Request, Response } from "express";
 import { patients }                  from "./patients";
 
@@ -13,8 +27,9 @@ const cosine= (a:number[], b:number[])=>{
 };
 
 /* ───── feature extraction ───────────────────────────────────────── */
+/** Deterministic featurization with bounded scalars and 4-way hash of condition. */
 function toVec(p:any) {
-  /* Age and PAR mapped to 0‑1  plus a 4‑bucket one‑hot hash
+  /* Age and PAR mapped to 0-1  plus a 4-bucket one-hot hash
      of the condition string.                                     */
   const age  = (p.age      ?? 0) / 100;
   const par  = (p.parScore ?? 0) / 50;
@@ -27,6 +42,7 @@ function toVec(p:any) {
 }
 
 /* ───── transform to API shape ───────────────────────────────────── */
+/** Lift similarity scalar into the public SimilarPatient projection. */
 function makeSimilar(base:any, other:any) {
   const sim = cosine(toVec(base), toVec(other));
   return {
@@ -43,8 +59,7 @@ function makeSimilar(base:any, other:any) {
 /* ================================================================== */
 export const router = Router();
 
-/* ------------------- GET /:patientId ------------------------------ */
-/*        ?k=10&minSimilarity=70                                     */
+/** GET /:patientId — top-k neighbors with optional similarity floor. */
 router.get("/:patientId", (req:Request, res:Response) => {
   const { patientId } = req.params;
   const k             = Number(req.query.k ?? 10);
@@ -64,7 +79,7 @@ router.get("/:patientId", (req:Request, res:Response) => {
   res.json({ success:true, data:list, count:list.length });
 });
 
-/* ------------------- POST /:patientId/search ---------------------- */
+/** POST /:patientId/search — cohort-gated neighbor search with ranking. */
 router.post("/:patientId/search", (req:Request, res:Response) => {
   const { patientId }   = req.params;
   const {

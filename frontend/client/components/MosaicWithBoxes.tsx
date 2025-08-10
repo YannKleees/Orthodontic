@@ -1,3 +1,20 @@
+/**
+ * @file MosaicWithBoxes.tsx
+ * @brief
+ *   Read-only mosaic renderer that overlays PAR component rectangles. Converts
+ *   persisted “natural” mosaic coordinates into CSS pixel positions based on
+ *   the displayed image size.
+ *
+ * @why
+ *   Separation of concerns: this component focuses on faithful visualization
+ *   and responsive scaling; editing/manipulation is implemented elsewhere
+ *   (e.g., MosaicFullscreen).
+ *
+ * @math
+ *   Given natural size N=(W,H) and displayed size D=(w,h),
+ *   CSS box = scaleBox([x,y,wB,hB], N, D) → {left, top, width, height}.
+ */
+
 import { useEffect, useRef, useState } from "react";
 import type { Visit } from "@/hooks/types";
 import { scaleBox }   from "@/lib/geometry";
@@ -19,7 +36,10 @@ export function MosaicWithBoxes({ visit }:{ visit:Visit }) {
   const imgRef          = useRef<HTMLImageElement>(null);
   const [size,setSize]  = useState<{w:number;h:number}|null>(null);
 
-  /* keep DOM → state in sync */
+  /**
+   * Keep the displayed size in sync with the DOM image element.
+   * Updates on mount, resize, and onLoad to maintain accurate overlays.
+   */
   useEffect(() => {
     if (!imgRef.current) return;
     const update = () => {
@@ -31,6 +51,7 @@ export function MosaicWithBoxes({ visit }:{ visit:Visit }) {
     return () => window.removeEventListener("resize", update);
   }, []);
 
+  /** Natural (model-space) mosaic dimensions; fallback to defaults if absent. */
   const natW = visit.mosaicWidth  ?? 600;
   const natH = visit.mosaicHeight ?? 400;
 
@@ -49,7 +70,7 @@ export function MosaicWithBoxes({ visit }:{ visit:Visit }) {
         draggable={false}
       />
 
-      {/* overlay */}
+      {/* Overlay layer: each rectangle scaled from natural → CSS pixels */}
       {size && (visit.boxes ?? []).map(box=>{
         const { left,top,width,height } =
           scaleBox(box.coordinates, {w:natW,h:natH}, size);

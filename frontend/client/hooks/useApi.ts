@@ -1,10 +1,16 @@
 /* ------------------------------------------------------------------
-   client/hooks/useApi.ts      —  FULL FILE
+   client/hooks/useApi.ts — React data-access hooks over apiClient
+   ------------------------------------------------------------------
+   Purpose:
+   - Provide minimal, composable hooks for network I/O with consistent
+     loading/error semantics.
+   - Favor idempotent GET-style reads through a generic helper (useApi),
+     and expose thin hook wrappers per resource to preserve type safety.
 ------------------------------------------------------------------- */
 import { useState, useEffect, useCallback } from "react";
 import { apiClient, type ApiResponse }      from "@/lib/api";
 
-/* domain types ---------------------------------------------------- */
+/* Domain types: hydrate API payloads with compile-time structure ---- */
 import type {
   Visit,
   Patient,
@@ -12,12 +18,20 @@ import type {
   SimilarPatient,
 } from "@/hooks/types";
 
-/* ================================================================
-   1.  Generic helper – turns any async GET into a small React hook
-   ================================================================ */
+/* ===================================================================
+   1) Generic helper — converts an async GET into a React hook
+   -------------------------------------------------------------------
+   Behaviour:
+   - Executes apiFn() on mount and whenever `deps` changes.
+   - Encapsulates tri-state control flow: data | loading | error.
+   - Returns a stable `refetch` function (memoized with deps).
+   Rationale:
+   - Minimizes repetitive hook boilerplate while preserving explicit
+     dependency control for cache invalidation or parameter changes.
+=================================================================== */
 export function useApi<T>(
   apiFn: () => Promise<ApiResponse<T>>,
-  deps : any[] = [],                        // re‑run when deps change
+  deps : any[] = [],                                      // recompute criterion
 ) {
   const [data,    setData   ] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,14 +55,21 @@ export function useApi<T>(
   return { data, loading, error, refetch: fetchData };
 }
 
-/* ================================================================
-   2.  Read‑only hooks (auto‑refetch on dependency change)
-   ================================================================ */
+/* ===================================================================
+   2) Read-only hooks — paramized selectors with automatic refetch
+   -------------------------------------------------------------------
+   Notes:
+   - Patients: options object is stringified to form a stable memo key
+     so deep-equal changes trigger refetch while avoiding referential
+     mismatch on equivalent objects.
+   - Other hooks use primitive dependencies (e.g., ids) for clarity.
+=================================================================== */
 export const usePatients = (opts?: { q?: string; parMin?: number; parMax?: number; severity?: string }) =>
   useApi<Patient[]>(
-    () => apiClient.getPatients(opts),          // ← pass whole object
-    [JSON.stringify(opts ?? {})],               // ensure proper memo key
+    () => apiClient.getPatients(opts),                     // pass the entire filter object
+    [JSON.stringify(opts ?? {})],                          // deterministic memoization
   );
+
 export const usePatient = (id?: string) =>
   useApi<Patient>(() => apiClient.getPatient(id!), [id]);
 
@@ -70,22 +91,29 @@ export const useSimilarPatients = (pid?: string, k = 10) =>
     [pid, k],
   );
 
-/* ----------------------------------------------------------------
-   Live list of PAR components for a visit  (dashboard & editor)
-   ---------------------------------------------------------------- */
+/* ------------------------------------------------------------------
+   Live PAR component stream for a visit (editor & dashboards)
+   ------------------------------------------------------------------
+   Semantics:
+   - Observes patient/visit identity; on change, re-queries the set
+     of annotated components intended for PAR aggregation and review.
+------------------------------------------------------------------- */
 export const usePARComponentList = (pid?: string, vid?: string) =>
   useApi<PARComponent[]>(
     () => apiClient.getPARComponent(pid!, vid!), [pid, vid]);
 
-/*  lower‑case alias so the earlier import in PatientMosaic still
-    works without code changes                                        */
+/* Backwards-compat alias: preserve earlier import casing semantics --- */
 export const useParComponentList = usePARComponentList;
 
-/* ================================================================
-   3.  CRUD helpers for PAR components (plain async, not hooks)
-   ================================================================ */
+/* ===================================================================
+   3) CRUD helpers — side-effectful operations as plain async calls
+   -------------------------------------------------------------------
+   Rationale:
+   - Keep mutation semantics explicit; callers can chain invalidation
+     or optimistic updates in their own scope if needed.
+=================================================================== */
 
-/** Create a new PAR component */
+/** Create a new PAR component with provenance metadata (frontend tag). */
 export const createPARComponent = async (
   patientId : string,
   visitId   : string,
@@ -96,7 +124,7 @@ export const createPARComponent = async (
     modifiedBy: "frontend",
   });
 
-/** Update an existing PAR component */
+/** Patch an existing PAR component; merges partial fields. */
 export const updatePARComponent = async (
   patientId   : string,
   visitId     : string,
@@ -108,7 +136,7 @@ export const updatePARComponent = async (
     modifiedBy: "frontend",
   });
 
-/** Delete a PAR component */
+/** Hard-delete a PAR component by identifier. */
 export const deletePARComponent = async (
   patientId   : string,
   visitId     : string,

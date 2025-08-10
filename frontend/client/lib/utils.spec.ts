@@ -1,3 +1,16 @@
+/** ==================================================================
+ * utils.spec.ts — Unit tests for cn()
+ * ===================================================================
+ * PURPOSE:
+ * - Validates that the cn() utility merges and overrides classes
+ *   correctly under various conditions.
+ * - Ensures conditional and object-syntax merging is stable.
+ *
+ * SCIENTIFIC CONTEXT:
+ * - In Tailwind CSS, class order matters; later classes override earlier ones.
+ * - The `tailwind-merge` library's resolution must be preserved.
+ * ===================================================================
+ */
 import { describe, it, expect } from "vitest";
 import { cn } from "./utils";
 

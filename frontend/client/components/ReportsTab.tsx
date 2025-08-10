@@ -1,13 +1,36 @@
+/**
+ * @file ReportsTab.tsx
+ * @brief Read-only listing and quick actions for patient reports.
+ *
+ * @description
+ * Displays a curated set of clinical report cards (e.g., imaging, lab,
+ * consultation). Each card shows type, status, author, date, and a concise
+ * synopsis suitable for clinical review. Action buttons are stubs that can be
+ * wired to view/download flows or report generation.
+ */
+
 import { FileText, Download, Eye, Calendar, User, Plus } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 
+/**
+ * Props for the reports tab.
+ */
 interface ReportsTabProps {
+  /** Patient display name for context headers. */
   patientName: string;
+  /** Patient identifier used when wiring real data sources. */
   patientId: string;
 }
 
+/**
+ * Canonical report structure for dental/orthodontic workflows.
+ *
+ * @remarks
+ * - `type` denotes clinical modality; use to color-code or filter.
+ * - `status` distinguishes preliminary vs signed-off results.
+ */
 interface Report {
   id: string;
   title: string;
@@ -18,8 +41,18 @@ interface Report {
   summary: string;
 }
 
+/**
+ * ReportsTab
+ *
+ * @param patientName Render context for headings.
+ * @param patientId   Reserved for future data fetching integration.
+ *
+ * @remarks
+ * - Placeholder dataset is used; swap with API data when backend is available.
+ * - Cards are keyboard-accessible; actions expose predictable labels.
+ * - Color treatment communicates modality and report status at a glance.
+ */
 export function ReportsTab({ patientName, patientId }: ReportsTabProps) {
-  // Sample reports data - Dental focused
   const reports: Report[] = [
     {
       id: "1",
@@ -63,31 +96,43 @@ export function ReportsTab({ patientName, patientId }: ReportsTabProps) {
     },
   ];
 
-  const typeColors = {
-    lab: "bg-blue-100 text-blue-800", // Periodontal/Lab tests
-    imaging: "bg-purple-100 text-purple-800", // X-rays, intraoral photos
-    consultation: "bg-green-100 text-green-800", // Treatment planning
-    discharge: "bg-orange-100 text-orange-800", // Completion reports
+  /** Visual classes for report modality semantics. */
+  const typeColors: Record<Report["type"], string> = {
+    lab: "bg-blue-100 text-blue-800",
+    imaging: "bg-purple-100 text-purple-800",
+    consultation: "bg-green-100 text-green-800",
+    discharge: "bg-orange-100 text-orange-800",
   };
 
-  const statusColors = {
+  /** Visual classes for report verification state. */
+  const statusColors: Record<Report["status"], string> = {
     final: "bg-green-100 text-green-800",
     preliminary: "bg-yellow-100 text-yellow-800",
     pending: "bg-gray-100 text-gray-800",
   };
 
+  /**
+   * Placeholder action for generating a new report.
+   * Replace with navigation or mutation that triggers report creation.
+   */
   const handleGenerateReport = () => {
     alert("Generate new report functionality would be implemented here");
   };
 
+  /**
+   * Placeholder action for opening a report detail view.
+   * @param reportId Target report identifier.
+   */
   const handleViewReport = (reportId: string) => {
     alert(`View report ${reportId} functionality would be implemented here`);
   };
 
+  /**
+   * Placeholder action for downloading a report artifact.
+   * @param reportId Target report identifier.
+   */
   const handleDownloadReport = (reportId: string) => {
-    alert(
-      `Download report ${reportId} functionality would be implemented here`,
-    );
+    alert(`Download report ${reportId} functionality would be implemented here`);
   };
 
   return (
@@ -97,11 +142,9 @@ export function ReportsTab({ patientName, patientId }: ReportsTabProps) {
           <h2 className="text-2xl font-semibold text-on-surface">
             Reports - {patientName}
           </h2>
-          <p className="text-on-surface-variant">
-            Medical reports and test results
-          </p>
+          <p className="text-on-surface-variant">Medical reports and test results</p>
         </div>
-        <Button onClick={handleGenerateReport} className="gap-2">
+        <Button onClick={handleGenerateReport} className="gap-2" aria-label="Generate report">
           <Plus className="w-4 h-4" />
           Generate Report
         </Button>
@@ -117,25 +160,22 @@ export function ReportsTab({ patientName, patientId }: ReportsTabProps) {
                   <Badge variant="outline" className={typeColors[report.type]}>
                     {report.type.charAt(0).toUpperCase() + report.type.slice(1)}
                   </Badge>
-                  <Badge
-                    variant="outline"
-                    className={statusColors[report.status]}
-                  >
-                    {report.status.charAt(0).toUpperCase() +
-                      report.status.slice(1)}
+                  <Badge variant="outline" className={statusColors[report.status]}>
+                    {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
                   </Badge>
                 </div>
               </div>
             </CardHeader>
+
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div className="flex items-center gap-2 text-sm">
-                  <Calendar className="w-4 h-4 text-on-surface-variant" />
+                  <Calendar className="w-4 h-4 text-on-surface-variant" aria-hidden />
                   <span className="font-medium">Date:</span>
                   <span>{new Date(report.date).toLocaleDateString()}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
-                  <User className="w-4 h-4 text-on-surface-variant" />
+                  <User className="w-4 h-4 text-on-surface-variant" aria-hidden />
                   <span className="font-medium">Doctor:</span>
                   <span>{report.doctor}</span>
                 </div>
@@ -143,12 +183,10 @@ export function ReportsTab({ patientName, patientId }: ReportsTabProps) {
 
               <div className="bg-gray-50 p-3 rounded-lg mb-4">
                 <div className="flex items-start gap-2">
-                  <FileText className="w-4 h-4 text-on-surface-variant mt-0.5" />
+                  <FileText className="w-4 h-4 text-on-surface-variant mt-0.5" aria-hidden />
                   <div>
                     <span className="font-medium text-sm">Summary:</span>
-                    <p className="text-sm text-on-surface-variant mt-1">
-                      {report.summary}
-                    </p>
+                    <p className="text-sm text-on-surface-variant mt-1">{report.summary}</p>
                   </div>
                 </div>
               </div>
@@ -158,6 +196,7 @@ export function ReportsTab({ patientName, patientId }: ReportsTabProps) {
                   variant="outline"
                   size="sm"
                   onClick={() => handleViewReport(report.id)}
+                  aria-label={`View report ${report.title}`}
                 >
                   <Eye className="w-4 h-4 mr-1" />
                   View
@@ -166,6 +205,7 @@ export function ReportsTab({ patientName, patientId }: ReportsTabProps) {
                   variant="outline"
                   size="sm"
                   onClick={() => handleDownloadReport(report.id)}
+                  aria-label={`Download report ${report.title}`}
                 >
                   <Download className="w-4 h-4 mr-1" />
                   Download

@@ -1,8 +1,15 @@
-/* AddPatientForm.css ───────────────────────────────────────── */
+/* =============================================================================
+   AddPatientForm.css
+   -----------------------------------------------------------------------------
+   Styles for floating-label form controls with per-character animation, 
+   date-input placeholder suppression, and animated call-to-action buttons.
+============================================================================= */
 
-/* AddPatientForm.css ───────────────────────────────────────── */
-
-/* -------- floating‑label input -------- */
+/* -------------------- Floating-label text input ----------------------------
+   - Positions label absolutely above input baseline
+   - Animates each label character independently
+   - Supports hint text fade-in when label floats
+----------------------------------------------------------------------------- */
 .form-control {
   position: relative;
   margin: 20px 0 58px;
@@ -10,7 +17,7 @@
 }
 
 .form-control input {
-  display: block;                 /* must be block, not hidden */
+  display: block;
   width: 100%;
   background: transparent;
   border: 0;
@@ -33,7 +40,7 @@
   pointer-events: none;
 }
 
-.form-control label span.char {        /* each character */
+.form-control label span.char {
   display: inline-block;
   min-width: 5px;
   font-size: 18px;
@@ -42,7 +49,6 @@
               color 0.3s;
 }
 
-/* extra hint that appears only after label floats */
 .form-control label .hint {
   opacity: 0;
   margin-left: 4px;
@@ -50,24 +56,26 @@
   color: #555;
   transition: opacity 0.3s;
 }
-/* ───── hide the default placeholder shown by <input type="date"> ───── */
 
-/* Chrome / Edge / Safari (WebKit/Blink) */
+/* -------------------- Date input placeholder suppression -------------------
+   For type="date" controls: hide built-in placeholder text until focus/value.
+   Implements WebKit/Blink, Firefox, and :placeholder-shown generic fallback.
+----------------------------------------------------------------------------- */
+
+/* WebKit/Blink browsers */
 .form-control input[type="date"]:not(:focus):not(:valid)::-webkit-datetime-edit {
-  color: transparent;          /* make the placeholder invisible */
+  color: transparent;
 }
-
 /* Firefox */
 .form-control input[type="date"]:not(:focus):not(:valid)::-moz-placeholder {
   color: transparent;
 }
-
-/* Generic fallback: if :placeholder-shown is supported */
+/* Fallback via placeholder-shown */
 .form-control input[type="date"]:placeholder-shown {
   color: transparent;
 }
 
-/* When the user focuses or a value exists, restore the text color */
+/* When focused or valid, restore text color with delayed transition */
 .form-control input[type="date"]:focus::-webkit-datetime-edit,
 .form-control input[type="date"]:valid::-webkit-datetime-edit,
 .form-control input[type="date"]:focus::-moz-placeholder,
@@ -79,16 +87,21 @@
   color: #000;
   transition: color 0.2s ease 1s;
 }
+
+/* -------------------- Label float-up triggers ----------------------------- */
 .form-control input:focus + label span.char,
 .form-control input:valid + label span.char {
   transform: translateY(-26px) scale(0.8);
 }
-
 .form-control input:focus + label .hint,
 .form-control input:valid + label .hint {
   opacity: 1;
 }
-/* ------------- animated button ------------- */
+
+/* -------------------- Animated call-to-action button -----------------------
+   - Uses ::before-style `.button-decor` layer for slide-in color transition
+   - Splits icon/text for layout stability during animation
+----------------------------------------------------------------------------- */
 .button {
   position: relative;
   overflow: hidden;
@@ -106,7 +119,7 @@
   position: absolute;
   inset: 0;
   background-color: var(--clr);
-  transform: translateX(-90%);     /* full slide‑in */
+  transform: translateX(-90%);
   transition: transform 0.5s;
   z-index: 0;
 }

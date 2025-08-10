@@ -1,8 +1,12 @@
-/* PatientSidebar.tsx — 2025‑07‑30
-   • bug‑fix: PAR filters/sorting now use the score of the **latest visit only**.
-   • added: lastParScore() helper; removed allParScores()/latestScore().
-   • layout, styling and behaviour otherwise identical to the original.
-*/
+/**
+ * @file PatientSidebar.tsx
+ * @brief Patient directory with facets and sorting.
+ *
+ * @updates 2025-07-30
+ * - Fix: PAR filters/sorting now use the score from the latest visit only.
+ * - Added: `lastParScore()` helper; removed earlier aggregate helpers.
+ * - Layout, styling, and behavior remain backward compatible.
+ */
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import {
@@ -17,19 +21,22 @@ import { cn } from "@/lib/utils";
 import type { Visit } from "@/hooks/types";
 import "./PatientSidebar.css";
 
-/* ---------- local types ---------------------------------------- */
+/** Canonical patient shape used by the directory. */
 interface Patient {
   id: string;
   name: string;
   age: number;
   condition?: string;
   visits?: Visit[];
-
-  currentPARScore?: number;           // optional quick‑access
-  parScore?: number;                  // optional legacy alias
+  /** Optional scalar PAR if already computed upstream. */
+  currentPARScore?: number;
+  /** Legacy alias preserved for compatibility. */
+  parScore?: number;
+  /** Clinician-triaged urgency bucket. */
   treatmentUrgency?: "low" | "medium" | "high" | "emergency";
 }
 
+/** Props for the patient directory sidebar. */
 interface PatientSidebarProps {
   expanded: boolean;
   onToggle: () => void;
@@ -39,7 +46,7 @@ interface PatientSidebarProps {
   selectedPatientId?: string;
 }
 
-/* ---------- constants ------------------------------------------ */
+/** Facet constants. */
 const URGENCY = ["low", "medium", "high", "emergency"] as const;
 const PAR_COMPONENTS = [
   "Upper Crowding",
@@ -61,7 +68,9 @@ const SORT_FIELDS = [
 
 type SortDir = "asc" | "desc";
 
-/* ================================================================= */
+/**
+ * Sidebar list of patients with full-text search, facet filters, and sorting.
+ */
 export function PatientSidebar({
   expanded,
   onToggle,
@@ -70,7 +79,6 @@ export function PatientSidebar({
   onAddPatient,
   selectedPatientId,
 }: PatientSidebarProps) {
-  /* ---------- UI state ---------------------------------------- */
   const [query, setQuery] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -83,7 +91,7 @@ export function PatientSidebar({
   const [sortField, setSortField] = useState<string>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  /* Close filter drawer with Esc */
+  /** Close the filter drawer with Escape for keyboard users. */
   useEffect(() => {
     const esc = (e: KeyboardEvent) => {
       if (e.key === "Escape" && drawerOpen) setDrawerOpen(false);
@@ -92,27 +100,31 @@ export function PatientSidebar({
     return () => window.removeEventListener("keydown", esc);
   }, [drawerOpen]);
 
-  /* ---------- filtering & sorting ----------------------------- */
+  /**
+   * Derived patient list: text search → facets → range filter → sort.
+   * Latest-visit PAR score is used for numeric filtering and ordering.
+   */
   const filtered = useMemo(() => {
     let list = [...availablePatients];
 
-    /* free text ------------------------------------------------ */
+    // Full-text search across name, condition, id, and age string.
     if (query.trim()) {
-   const tokens = deburr(query).toLowerCase().split(/\s+/);
-   list = list.filter(p =>
-     matchAll(`${p.name} ${p.condition ?? ""}`, tokens) ||
-     matchAll(p.id, tokens) ||
-     tokens.every(t => p.age.toString().includes(t))
-   );
- }
-    /* urgency facet ------------------------------------------- */
-    const urgActive = activeKeys(urgSel);
-    if (urgActive.length)
-      list = list.filter((p) =>
-        urgActive.includes(p.treatmentUrgency ?? ""),
+      const tokens = deburr(query).toLowerCase().split(/\s+/);
+      list = list.filter(
+        (p) =>
+          matchAll(`${p.name} ${p.condition ?? ""}`, tokens) ||
+          matchAll(p.id, tokens) ||
+          tokens.every((t) => p.age.toString().includes(t)),
       );
+    }
 
-    /* PAR score range (latest visit only) ---------------------- */
+    // Urgency facet.
+    const urgActive = activeKeys(urgSel);
+    if (urgActive.length) {
+      list = list.filter((p) => urgActive.includes(p.treatmentUrgency ?? ""));
+    }
+
+    // PAR score range (latest visit only).
     if (parMin !== 0 || parMax !== 60) {
       list = list.filter((p) => {
         const s = lastParScore(p);
@@ -120,7 +132,7 @@ export function PatientSidebar({
       });
     }
 
-    /* PAR component facet -------------------------------------- */
+    // PAR component facet (presence across any visit).
     const compActive = activeKeys(compSel).map(lc);
     if (compActive.length) {
       list = list.filter((p) =>
@@ -130,7 +142,7 @@ export function PatientSidebar({
       );
     }
 
-    /* sorting -------------------------------------------------- */
+    // Sorting.
     const sign = sortDir === "asc" ? 1 : -1;
     list.sort((a, b) => {
       switch (sortField) {
@@ -148,28 +160,17 @@ export function PatientSidebar({
     });
 
     return list;
-  }, [
-    availablePatients,
-    query,
-    urgSel,
-    compSel,
-    parMin,
-    parMax,
-    sortField,
-    sortDir,
-  ]);
+  }, [availablePatients, query, urgSel, compSel, parMin, parMax, sortField, sortDir]);
 
-  /* ---------- chips (active filters) -------------------------- */
+  /** Active filter “chips” for quick visual feedback and removal. */
   const chips = [
     ...URGENCY.filter((k) => urgSel[k]).map(cap),
     ...PAR_COMPONENTS.filter((c) => compSel[c]),
-    ...(parMin !== 0 || parMax !== 60 ? [`${parMin}‑${parMax}`] : []),
+    ...(parMin !== 0 || parMax !== 60 ? [`${parMin}-${parMax}`] : []),
   ];
   const untickChip = (lbl: string) => {
-    if (URGENCY.map(cap).includes(lbl))
-      setUrgSel((s) => ({ ...s, [lbl.toLowerCase()]: false }));
-    else if (PAR_COMPONENTS.includes(lbl as any))
-      setCompSel((s) => ({ ...s, [lbl]: false }));
+    if (URGENCY.map(cap).includes(lbl)) setUrgSel((s) => ({ ...s, [lbl.toLowerCase()]: false }));
+    else if (PAR_COMPONENTS.includes(lbl as any)) setCompSel((s) => ({ ...s, [lbl]: false }));
     else {
       setParMin(0);
       setParMax(60);
@@ -185,10 +186,9 @@ export function PatientSidebar({
     setParMax(60);
   };
 
-  /* ========================= render =========================== */
   return (
     <>
-      {/* small invisible “handle” when sidebar collapsed */}
+      {/* Small hover handle to reopen when collapsed */}
       {!expanded && (
         <div
           onClick={onToggle}
@@ -196,7 +196,6 @@ export function PatientSidebar({
         />
       )}
 
-      {/* main sidebar */}
       <aside
         className={cn(
           "fixed left-20 top-0 h-full bg-white transition-all duration-300 z-40 flex flex-col shadow-lg border-r-2 border-gray-100",
@@ -204,7 +203,6 @@ export function PatientSidebar({
         )}
       >
         <div className="p-4 space-y-4 flex-1 overflow-y-auto">
-          {/* --- header (search + chips) ------------------------- */}
           <HeaderRow
             query={query}
             setQuery={setQuery}
@@ -216,7 +214,6 @@ export function PatientSidebar({
             toggleDrawer={toggleDrawer}
           />
 
-          {/* --- patient list ----------------------------------- */}
           <PatientList
             patients={filtered}
             selectedId={selectedPatientId}
@@ -240,7 +237,6 @@ export function PatientSidebar({
         </div>
       </aside>
 
-      {/* draggable filter drawer */}
       <ResizableDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <DrawerContent
           urgSel={urgSel}
@@ -262,9 +258,7 @@ export function PatientSidebar({
   );
 }
 
-/* ================================================================= */
-/* ----------------- DrawerContent --------------------------------- */
-/* ================================================================= */
+/** Drawer content with facets, range control, and sort settings. */
 function DrawerContent(props: {
   urgSel: FacetState;
   setUrgSel: React.Dispatch<React.SetStateAction<FacetState>>;
@@ -298,21 +292,14 @@ function DrawerContent(props: {
 
   return (
     <div className="filter-drawer-inner">
-      <h3 className="drawer-title mb-4">Filters &amp; sort</h3>
+      <h3 className="drawer-title mb-4">Filters&nbsp;&amp;&nbsp;sort</h3>
 
-      {/* --- urgency facet ------------------------------------ */}
-      <Facet
-        title="Treatment urgency"
-        values={URGENCY}
-        state={urgSel}
-        setState={setUrgSel}
-      />
+      <Facet title="Treatment urgency" values={URGENCY} state={urgSel} setState={setUrgSel} />
 
-      {/* --- PAR range facet ---------------------------------- */}
       <section className="facet-section par-range">
-        <p className="facet-title">PAR score range</p>
+        <p className="facet-title">PAR score&nbsp;range</p>
         <div className="range-values">
-          {parMin} – {parMax}
+          {parMin} – {parMax}
         </div>
         <div className="range-wrapper">
           <input
@@ -321,9 +308,8 @@ function DrawerContent(props: {
             max={60}
             step={1}
             value={parMin}
-            onChange={(e) =>
-              setParMin(Math.min(+e.target.value, parMax - 1))
-            }
+            onChange={(e) => setParMin(Math.min(+e.target.value, parMax - 1))}
+            aria-label="Minimum PAR"
           />
           <input
             type="range"
@@ -331,14 +317,12 @@ function DrawerContent(props: {
             max={60}
             step={1}
             value={parMax}
-            onChange={(e) =>
-              setParMax(Math.max(+e.target.value, parMin + 1))
-            }
+            onChange={(e) => setParMax(Math.max(+e.target.value, parMin + 1))}
+            aria-label="Maximum PAR"
           />
         </div>
       </section>
 
-      {/* --- PAR component facet ------------------------------ */}
       <Facet
         title="PAR component"
         values={PAR_COMPONENTS}
@@ -347,7 +331,6 @@ function DrawerContent(props: {
         scroll
       />
 
-      {/* --- sorting ------------------------------------------ */}
       <section className="mt-6">
         <p className="facet-title">Sort by</p>
         <div className="radio-inputs">
@@ -368,18 +351,10 @@ function DrawerContent(props: {
 
         <button
           className="sort-dir-btn"
-          onClick={() =>
-            setSortDir((prev: SortDir) =>
-              prev === "asc" ? "desc" : "asc",
-            )
-          }
+          onClick={() => setSortDir((prev: SortDir) => (prev === "asc" ? "desc" : "asc"))}
           title={sortDir === "asc" ? "ascending" : "descending"}
         >
-          {sortDir === "asc" ? (
-            <ArrowUpAZ className="w-4 h-4" />
-          ) : (
-            <ArrowDownAZ className="w-4 h-4" />
-          )}
+          {sortDir === "asc" ? <ArrowUpAZ className="w-4 h-4" /> : <ArrowDownAZ className="w-4 h-4" />}
         </button>
       </section>
 
@@ -390,9 +365,7 @@ function DrawerContent(props: {
   );
 }
 
-/* ================================================================= */
-/* ----------------- HeaderRow ------------------------------------- */
-/* ================================================================= */
+/** Search header with floating label, chips, and filter toggle. */
 function HeaderRow(props: {
   query: string;
   setQuery: (s: string) => void;
@@ -416,12 +389,8 @@ function HeaderRow(props: {
 
   return (
     <>
-      {/* --- search bar & icons -------------------------------- */}
       <div className="flex items-center gap-4 top-controls">
-        <form
-          onSubmit={(e) => e.preventDefault()}
-          className="relative w-60"
-        >
+        <form onSubmit={(e) => e.preventDefault()} className="relative w-60">
           <input
             id="patient-search"
             type="text"
@@ -436,14 +405,9 @@ function HeaderRow(props: {
           <label htmlFor="patient-search" className="floating-label">
             Search patients
           </label>
-          {query ? (
-            <X className="clear-ico" onClick={() => setQuery("")} />
-          ) : (
-            <Search className="search-ico" />
-          )}
+          {query ? <X className="clear-ico" onClick={() => setQuery("")} /> : <Search className="search-ico" />}
         </form>
 
-        {/* add‑patient icon ------------------------------------ */}
         {onAddPatient && (
           <button
             title="Add patient"
@@ -456,59 +420,46 @@ function HeaderRow(props: {
               height="50"
               viewBox="0 0 24 24"
               className="stroke-blue-400 fill-none group-hover:fill-white group-active:stroke-blue-200 duration-300"
+              aria-label="Add patient"
             >
-              <path
-                d="M12 22c5.5 0 10-4.5 10-10S17.5 2 12 2 2 6.5 2 12s4.5 10 10 10Z"
-                strokeWidth="1.5"
-              />
+              <path d="M12 22c5.5 0 10-4.5 10-10S17.5 2 12 2 2 6.5 2 12s4.5 10 10 10Z" strokeWidth="1.5" />
               <path d="M8 12h8M12 16V8" strokeWidth="1.5" />
             </svg>
           </button>
         )}
 
-        {/* filter drawer toggle -------------------------------- */}
         <button
           onClick={toggleDrawer}
           className="ml-auto p-2 rounded-full hover:bg-primary/10 transition"
           title="Filters"
+          aria-label="Open filters"
         >
           <SlidersHorizontal className="w-5 h-5 text-primary" />
         </button>
       </div>
 
-      {/* active filter chips ------------------------------------ */}
       {(query || chips.length) && (
         <div className="chips-row">
-          {query && (
-            <Chip text={`“${query}”`} onClear={() => setQuery("")} />
-          )}
+          {query && <Chip text={`“${query}”`} onClear={() => setQuery("")} />}
           {chips.map((c) => (
             <Chip key={c} text={c} onClear={() => onChipClear(c)} />
           ))}
-          {filteredLen > 0 && (
-            <span className="result-count">{filteredLen} match</span>
-          )}
+          {filteredLen > 0 && <span className="result-count">{filteredLen} match</span>}
         </div>
       )}
     </>
   );
 }
-const Chip = ({
-  text,
-  onClear,
-}: {
-  text: string;
-  onClear: () => void;
-}) => (
+
+/** Small pill with clear icon used for active filters. */
+const Chip = ({ text, onClear }: { text: string; onClear: () => void }) => (
   <span className="chip">
     {text}
     <X className="w-3 h-3 ml-1 cursor-pointer" onClick={onClear} />
   </span>
 );
 
-/* ================================================================= */
-/* ----------------- Facet (checkbox list) ------------------------- */
-/* ================================================================= */
+/** Generic facet section with checkbox options. */
 type FacetState = Record<string, boolean>;
 function Facet({
   title,
@@ -518,18 +469,13 @@ function Facet({
   scroll = false,
 }: {
   title: string;
-  values:
-    | readonly string[]
-    | readonly { key: string; label: string }[];
+  values: readonly string[] | readonly { key: string; label: string }[];
   state: FacetState;
   setState: React.Dispatch<React.SetStateAction<FacetState>>;
   scroll?: boolean;
 }) {
-  const opts = (values as any[]).map((v) =>
-    typeof v === "string" ? { key: v, label: v } : v,
-  );
-  const toggle = (k: string) =>
-    setState((s) => ({ ...s, [k]: !s[k] }));
+  const opts = (values as any[]).map((v) => (typeof v === "string" ? { key: v, label: v } : v));
+  const toggle = (k: string) => setState((s) => ({ ...s, [k]: !s[k] }));
 
   return (
     <section className="facet-section">
@@ -551,9 +497,7 @@ function Facet({
   );
 }
 
-/* ================================================================= */
-/* ----------------- PatientList (uses lastParScore) --------------- */
-/* ================================================================= */
+/** Patient list view; uses latest-visit PAR score for the badge. */
 function PatientList({
   patients,
   selectedId,
@@ -575,55 +519,30 @@ function PatientList({
               onClick={() => onSelect(p.id, p.name)}
               className={cn(
                 "flex items-center h-14 px-3 rounded-lg cursor-pointer transition-colors group",
-                selectedId === p.id
-                  ? "bg-primary/10 border-l-4 border-primary"
-                  : "hover:bg-gray-50",
+                selectedId === p.id ? "bg-primary/10 border-l-4 border-primary" : "hover:bg-gray-50",
               )}
             >
               <User
                 className={cn(
                   "w-4 h-4 mr-3",
-                  selectedId === p.id
-                    ? "text-primary"
-                    : "text-gray-400 group-hover:text-gray-600",
+                  selectedId === p.id ? "text-primary" : "text-gray-400 group-hover:text-gray-600",
                 )}
               />
               <div className="flex-1 min-w-0">
                 <div
-                  className={cn(
-                    "text-sm font-medium truncate",
-                    selectedId === p.id
-                      ? "text-primary"
-                      : "text-on-surface",
-                  )}
+                  className={cn("text-sm font-medium truncate", selectedId === p.id ? "text-primary" : "text-on-surface")}
                 >
                   {highlight(p.name)}
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="text-gray-500 text-xs truncate">
-                    ID:{p.id.split("-")[1]?.substring(0, 6) || p.id} •{" "}
-                    {p.age}y
+                    ID:{p.id.split("-")[1]?.substring(0, 6) || p.id} • {p.age}y
                   </div>
                   <div className="flex items-center gap-1">
-                    {!!p.visits?.length && (
-                      <span className="badge blue">
-                        {p.visits.length}v
-                      </span>
-                    )}
-                    {lastParScore(p) != null && (
-                      <span className="badge green">
-                        PAR:{lastParScore(p)}
-                      </span>
-                    )}
+                    {!!p.visits?.length && <span className="badge blue">{p.visits.length}v</span>}
+                    {lastParScore(p) != null && <span className="badge green">PAR:{lastParScore(p)}</span>}
                     {p.treatmentUrgency && (
-                      <span
-                        className={cn(
-                          "badge",
-                          urgColor(p.treatmentUrgency),
-                        )}
-                      >
-                        {p.treatmentUrgency}
-                      </span>
+                      <span className={cn("badge", urgColor(p.treatmentUrgency))}>{p.treatmentUrgency}</span>
                     )}
                   </div>
                 </div>
@@ -638,9 +557,7 @@ function PatientList({
   );
 }
 
-/* ================================================================= */
-/* ----------------- ResizableDrawer --------------------------------*/
-/* ================================================================= */
+/** Right-anchored drawer with a draggable left resize bar. */
 function ResizableDrawer({
   open,
   onClose,
@@ -658,10 +575,7 @@ function ResizableDrawer({
     const move = (e: MouseEvent) => {
       if (!start.current || !ref.current) return;
       const dx = start.current - e.clientX;
-      width.current = Math.min(
-        500,
-        Math.max(240, width.current + dx),
-      );
+      width.current = Math.min(500, Math.max(240, width.current + dx));
       ref.current!.style.width = `${width.current}px`;
       start.current = e.clientX;
     };
@@ -680,11 +594,10 @@ function ResizableDrawer({
   return (
     <div
       ref={ref}
-      className={cn(
-        "filter-drawer",
-        open ? "translate-x-0" : "translate-x-full",
-      )}
+      className={cn("filter-drawer", open ? "translate-x-0" : "translate-x-full")}
       style={{ width: `${width.current}px` }}
+      role="dialog"
+      aria-modal="true"
     >
       <div
         className="resize-bar"
@@ -693,64 +606,50 @@ function ResizableDrawer({
           document.body.style.cursor = "ew-resize";
         }}
         onDoubleClick={onClose}
+        aria-label="Resize filters drawer"
       />
       {children}
     </div>
   );
 }
 
-/* ================================================================= */
 /* ----------------- helpers (misc) -------------------------------- */
-/* ================================================================= */
+
 function recordFromArray(arr: readonly string[]) {
   return Object.fromEntries(arr.map((k) => [k, false])) as FacetState;
 }
-const activeKeys = (rec: FacetState) =>
-  Object.entries(rec)
-    .filter(([, v]) => v)
-    .map(([k]) => k);
+const activeKeys = (rec: FacetState) => Object.entries(rec).filter(([, v]) => v).map(([k]) => k);
 const lc = (s: string) => s.toLowerCase();
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const escapeRx = (s: string) =>
-  s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const urgRank = (u?: string) =>
-  u ? URGENCY.indexOf(u as any) : -1;
-const urgColor = (u: string) =>
-  u === "high" || u === "emergency"
-    ? "red"
-    : u === "medium"
-    ? "yellow"
-    : "gray";
-
-const deburr = (s: string) =>
-  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
+const escapeRx = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const urgRank = (u?: string) => (u ? URGENCY.indexOf(u as any) : -1);
+const urgColor = (u: string) => (u === "high" || u === "emergency" ? "red" : u === "medium" ? "yellow" : "gray");
+const deburr = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 function matchAll(haystack: string, needles: string[]) {
   const h = deburr(haystack.toLowerCase());
-  return needles.every(n => h.includes(n));
+  return needles.every((n) => h.includes(n));
 }
 
-/* ---------- NEW: return the PAR score of the latest visit ------- */
+/**
+ * Returns the PAR score from the latest visit, falling back to supplied scalars.
+ *
+ * @hierarchy
+ * 1) `visit.parScoreAtVisit` (explicit snapshot at time of visit)
+ * 2) `visit.parScore`
+ * 3) Sum of `boxes[].score` for the latest visit
+ * 4) `patient.currentPARScore` → `patient.parScore`
+ */
 function lastParScore(p: Patient): number | undefined {
-  /* If the parent already supplies a scalar, prefer that. */
   if (!p.visits || !p.visits.length) {
     return p.currentPARScore ?? p.parScore;
   }
 
-  /* pick the chronologically latest visit (regardless of status) */
-  const visits = p.visits.filter(
-    (v): v is Visit => !!v && typeof v.date === "string"
-  );
+  const visits = p.visits.filter((v): v is Visit => !!v && typeof v.date === "string");
   if (!visits.length) return p.currentPARScore ?? p.parScore;
 
-  const latest = visits.sort(
-    (a, b) => Date.parse(b.date) - Date.parse(a.date)
-  )[0];
+  const latest = visits.sort((a, b) => Date.parse(b.date) - Date.parse(a.date))[0];
 
-  /* hierarchy: manual score → visit.parScore → Σ boxes fallback */
-  if (typeof (latest as any).parScoreAtVisit === "number")
-    return (latest as any).parScoreAtVisit;
-
+  if (typeof (latest as any).parScoreAtVisit === "number") return (latest as any).parScoreAtVisit;
   if (typeof latest.parScore === "number") return latest.parScore;
 
   if (latest && Array.isArray(latest.boxes) && latest.boxes.length) {

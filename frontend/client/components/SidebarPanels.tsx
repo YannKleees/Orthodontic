@@ -1,3 +1,13 @@
+/**
+ * @file SidebarPanels.tsx
+ * @brief Right-side contextual panels for Visits, Reports, and Similarity.
+ *
+ * @description
+ * Router-like wrapper that renders one of three sidebars (Visits, Reports,
+ * Similar Patients) based on the active `section`. Each child sidebar is a
+ * controlled component that receives patient context and callback handlers.
+ */
+
 import { useState } from "react";
 import {
   Search,
@@ -16,22 +26,38 @@ import {
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { cn } from "../lib/utils";
-import { useVisits, useReports} from "../hooks/useApi";
+import { useVisits, useReports } from "../hooks/useApi";
 import FullScreenModal from "./FullScreenModal";
-import AddVisitForm    from "./AddVisitForm";
-import type { Visit }            from "@/hooks/types";
-import { SimilarPatientList }    from "./SimilarPatientList";
+import AddVisitForm from "./AddVisitForm";
+import type { Visit } from "@/hooks/types";
+import { SimilarPatientList } from "./SimilarPatientList";
+
+/** Props for the top-level sidebar switcher. */
 interface SidebarPanelsProps {
+  /** Which sidebar is active. */
   section: "visits" | "reports" | "similarity" | "other";
+  /** Whether the sidebar is expanded (width > 0). */
   expanded: boolean;
+  /** Collapses/expands the sidebar from the parent. */
   onToggle: () => void;
+  /** Patient display name for headers. */
   patientName: string;
+  /** Patient identifier for data fetching. */
   patientId: string;
+  /** Row/item click callback used by caller to open a subview. */
   onItemClick: (itemId: string, itemName: string) => void;
+  /** Optional hook for notifying parent that a visit was created. */
   onVisitCreated?: (visitId: string) => void;
+  /** Handler to open a specific visit detail UI from an item click. */
   onVisitClick(visitId: string, patientId: string, patientName: string): void;
 }
 
+/**
+ * SidebarPanels
+ *
+ * @remarks Dispatches to section-specific sidebars. Returns `null` for
+ * unknown sections to avoid rendering empty chrome.
+ */
 export function SidebarPanels({
   section,
   expanded,
@@ -40,7 +66,7 @@ export function SidebarPanels({
   patientId,
   onItemClick,
   onVisitCreated,
-  onVisitClick, 
+  onVisitClick,
 }: SidebarPanelsProps) {
   if (section === "visits") {
     return (
@@ -78,6 +104,9 @@ export function SidebarPanels({
   return null;
 }
 
+/**
+ * Visits sidebar: lists patient visits and routes selections upward.
+ */
 function VisitsSidebar({
   expanded,
   onToggle,
@@ -99,7 +128,7 @@ function VisitsSidebar({
   const [isSearching, setIsSearching] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
 
-  // Get dynamic visits data from API
+  /** Live visits sourced from API for the current patient. */
   const { data: visitsData, loading: visitsLoading } = useVisits(patientId);
   if (visitsLoading) {
     return (
@@ -108,7 +137,8 @@ function VisitsSidebar({
       </div>
     );
   }
-  const visits = (visitsData as Visit[] ?? []).map(v => ({
+
+  const visits = ((visitsData as Visit[]) ?? []).map((v) => ({
     id: v.id,
     date: v.date,
     type: v.type ?? "Visit",
@@ -119,7 +149,7 @@ function VisitsSidebar({
     mosaicUrl: v.mosaicUrl ?? undefined,
   }));
 
-
+  /** Local text filter over visit type and doctor fields. */
   const filteredVisits = searchQuery.trim()
     ? visits.filter(
         (visit) =>
@@ -129,12 +159,9 @@ function VisitsSidebar({
     : visits;
 
   const handleSearchToggle = () => {
-    setIsSearching(!isSearching);
-    if (isSearching) {
-      setSearchQuery("");
-    }
+    setIsSearching((v) => !v);
+    if (isSearching) setSearchQuery("");
   };
-
   const clearSearch = () => {
     setSearchQuery("");
     setIsSearching(false);
@@ -142,7 +169,7 @@ function VisitsSidebar({
 
   return (
     <>
-      {/* Clickable edge when collapsed */}
+      {/* Expand handle when collapsed */}
       {!expanded && (
         <div
           onClick={onToggle}
@@ -158,9 +185,6 @@ function VisitsSidebar({
         )}
       >
         <div className="p-4 space-y-4 flex-1 overflow-y-auto">
-          
-
-          {/* Visits List */}
           <div className="bg-white rounded-[40px] shadow-md border border-gray-100">
             <div className="p-2">
               <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center justify-between">
@@ -177,28 +201,24 @@ function VisitsSidebar({
                   <div
                     key={visit.id}
                     onClick={() => {
-                      /* open visit‑specific tab if the parent supplied the handler,
-                         otherwise keep the old “ just highlight row ” behaviour        */
+                      // Prefer structured visit navigation if provided
                       if (onVisitClick) {
                         onVisitClick(visit.id, patientId, patientName);
                       } else {
                         onItemClick(
                           visit.id,
-                          `${visit.type} - ${new Date(visit.date).toLocaleDateString()}`
+                          `${visit.type} - ${new Date(visit.date).toLocaleDateString()}`,
                         );
                       }
                     }}
                     className="flex items-start h-100 px-2 py-2 rounded-lg cursor-pointer transition-colors group hover:bg-gray-50"
                   >
-                   
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-on-surface flex items-start justify-between mb-1">
                         <span className="truncate pr-2">{visit.type}</span>
                         <Badge
                           variant={
-                            visit.status === "completed"
-                              ? "default"
-                              : "secondary"
+                            visit.status === "completed" ? "default" : "secondary"
                           }
                           className="text-xs flex-shrink-0"
                         >
@@ -206,8 +226,7 @@ function VisitsSidebar({
                         </Badge>
                       </div>
                       <div className="text-xs text-gray-500 mb-1">
-                        {new Date(visit.date).toLocaleDateString()} •{" "}
-                        {visit.time}
+                        {new Date(visit.date).toLocaleDateString()} • {visit.time}
                       </div>
                       <div className="text-xs text-gray-400 truncate">
                         {visit.description}
@@ -233,6 +252,9 @@ function VisitsSidebar({
   );
 }
 
+/**
+ * Reports sidebar: lists documents and quick metadata.
+ */
 function ReportsSidebar({
   expanded,
   onToggle,
@@ -248,7 +270,8 @@ function ReportsSidebar({
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
-  // Get dynamic reports data from API
+
+  /** Live reports from API for the current patient. */
   const { data: reportsData, loading: reportsLoading } = useReports(patientId);
   const reports = (reportsData || []).map((report) => ({
     id: report.id,
@@ -259,6 +282,7 @@ function ReportsSidebar({
     description: report.description,
   }));
 
+  /** Local filter by name/type. */
   const filteredReports = searchQuery.trim()
     ? reports.filter(
         (report) =>
@@ -268,12 +292,9 @@ function ReportsSidebar({
     : reports;
 
   const handleSearchToggle = () => {
-    setIsSearching(!isSearching);
-    if (isSearching) {
-      setSearchQuery("");
-    }
+    setIsSearching((v) => !v);
+    if (isSearching) setSearchQuery("");
   };
-
   const clearSearch = () => {
     setSearchQuery("");
     setIsSearching(false);
@@ -281,7 +302,6 @@ function ReportsSidebar({
 
   return (
     <>
-      {/* Clickable edge when collapsed */}
       {!expanded && (
         <div
           onClick={onToggle}
@@ -297,7 +317,7 @@ function ReportsSidebar({
         )}
       >
         <div className="p-4 space-y-4 flex-1 overflow-y-auto">
-          {/* Search Bar */}
+          {/* Search bar with toggleable input */}
           <div className="relative">
             <div className="flex items-center bg-surface-container-high rounded-[40px] h-12 px-4">
               {isSearching ? (
@@ -339,12 +359,12 @@ function ReportsSidebar({
             </div>
           </div>
 
-          {/* Generate Report Button */}
+          {/* Generate report CTA (wire when backend is ready) */}
           <Button className="bg-patient-tab text-black hover:bg-patient-tab/80 rounded-[40px] h-7 px-3 text-sm font-medium w-[140px]">
             GENERATE Report
           </Button>
 
-          {/* Reports List */}
+          {/* Report list */}
           <div className="bg-white rounded-[40px] shadow-md border border-gray-100">
             <div className="p-2">
               <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center justify-between">
@@ -370,17 +390,14 @@ function ReportsSidebar({
                       <div className="text-sm font-medium text-on-surface flex items-center justify-between">
                         <span className="truncate">{report.name}</span>
                         <Badge
-                          variant={
-                            report.status === "ready" ? "default" : "secondary"
-                          }
+                          variant={report.status === "ready" ? "default" : "secondary"}
                           className="text-xs ml-2"
                         >
                           {report.status}
                         </Badge>
                       </div>
                       <div className="text-xs text-gray-500">
-                        {new Date(report.date).toLocaleDateString()} •{" "}
-                        {report.type}
+                        {new Date(report.date).toLocaleDateString()} • {report.type}
                       </div>
                       <div className="text-xs text-gray-400 truncate">
                         {report.description}
@@ -406,6 +423,13 @@ function ReportsSidebar({
   );
 }
 
+/**
+ * Similarity sidebar: shows nearest-neighbor patients based on model outputs.
+ *
+ * @remarks
+ * Delegates retrieval and rendering to <SimilarPatientList/> to ensure a
+ * single source of truth for loading, empty, and error states.
+ */
 function SimilaritySidebar({
   expanded,
   onToggle,
@@ -422,7 +446,6 @@ function SimilaritySidebar({
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
 
-
   const outcomeColors = {
     excellent: "bg-green-100 text-green-700",
     good: "bg-blue-100 text-blue-700",
@@ -430,12 +453,9 @@ function SimilaritySidebar({
   };
 
   const handleSearchToggle = () => {
-    setIsSearching(!isSearching);
-    if (isSearching) {
-      setSearchQuery("");
-    }
+    setIsSearching((v) => !v);
+    if (isSearching) setSearchQuery("");
   };
-
   const clearSearch = () => {
     setSearchQuery("");
     setIsSearching(false);
@@ -443,7 +463,6 @@ function SimilaritySidebar({
 
   return (
     <>
-      {/* Clickable edge when collapsed */}
       {!expanded && (
         <div
           onClick={onToggle}
@@ -459,28 +478,24 @@ function SimilaritySidebar({
         )}
       >
         <div className="p-4 space-y-4 flex-1 overflow-y-auto">
-          
-
-          {/* Similar Patients List */}
           <div className="bg-white rounded-[40px] shadow-md border border-gray-100">
             <div className="p-2">
               <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase">
                 Similar Patients
               </div>
 
-              {/* single source of truth – handles loading / empty states */}
               <SimilarPatientList
                 patientId={patientId}
                 k={10}
                 onSelect={(id, name) => {
                   onItemClick(id, name);
-                  onToggle();       /* collapse sidebar after click (optional) */
+                  onToggle(); // optionally collapse after selection
                 }}
               />
             </div>
           </div>
-          </div>
         </div>
+      </div>
     </>
-  );  
+  );
 }

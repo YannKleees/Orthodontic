@@ -1,3 +1,10 @@
+/**
+ * @file SimilarityTab.tsx
+ * @brief Summary cards and list of similar patients for quick comparison.
+ *
+ * @note Uses static sample data; wire to API when available.
+ */
+
 import { Users, TrendingUp, Eye, Calendar, Activity } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -24,7 +31,7 @@ interface SimilarPatient {
 }
 
 export function SimilarityTab({ patientName, patientId }: SimilarityTabProps) {
-  // Sample similar patients data
+  /** Demo data; replace with API-fed list. */
   const similarPatients: SimilarPatient[] = [
     {
       id: "1",
@@ -81,7 +88,7 @@ export function SimilarityTab({ patientName, patientId }: SimilarityTabProps) {
     good: "bg-blue-100 text-blue-800",
     fair: "bg-yellow-100 text-yellow-800",
     poor: "bg-red-100 text-red-800",
-  };
+  } as const;
 
   const getSimilarityColor = (similarity: number) => {
     if (similarity >= 90) return "text-green-600";
@@ -90,10 +97,8 @@ export function SimilarityTab({ patientName, patientId }: SimilarityTabProps) {
     return "text-red-600";
   };
 
-  const handleViewPatient = (patientId: string) => {
-    alert(
-      `View patient ${patientId} details functionality would be implemented here`,
-    );
+  const handleViewPatient = (id: string) => {
+    alert(`View patient ${id} details functionality would be implemented here`);
   };
 
   return (
@@ -103,8 +108,7 @@ export function SimilarityTab({ patientName, patientId }: SimilarityTabProps) {
           Similar Patients - {patientName}
         </h2>
         <p className="text-on-surface-variant">
-          Patients with similar conditions and characteristics for treatment
-          comparison
+          Patients with similar conditions and characteristics for treatment comparison
         </p>
       </div>
 
@@ -115,12 +119,8 @@ export function SimilarityTab({ patientName, patientId }: SimilarityTabProps) {
             <div className="flex items-center gap-3">
               <Users className="w-8 h-8 text-blue-600" />
               <div>
-                <p className="text-2xl font-semibold">
-                  {similarPatients.length}
-                </p>
-                <p className="text-sm text-on-surface-variant">
-                  Similar Cases Found
-                </p>
+                <p className="text-2xl font-semibold">{similarPatients.length}</p>
+                <p className="text-sm text-on-surface-variant">Similar Cases Found</p>
               </div>
             </div>
           </CardContent>
@@ -138,9 +138,7 @@ export function SimilarityTab({ patientName, patientId }: SimilarityTabProps) {
                   )}
                   %
                 </p>
-                <p className="text-sm text-on-surface-variant">
-                  Avg Similarity
-                </p>
+                <p className="text-sm text-on-surface-variant">Avg Similarity</p>
               </div>
             </div>
           </CardContent>
@@ -159,9 +157,7 @@ export function SimilarityTab({ patientName, patientId }: SimilarityTabProps) {
                   }
                   /{similarPatients.length}
                 </p>
-                <p className="text-sm text-on-surface-variant">
-                  Positive Outcomes
-                </p>
+                <p className="text-sm text-on-surface-variant">Positive Outcomes</p>
               </div>
             </div>
           </CardContent>
@@ -212,9 +208,7 @@ export function SimilarityTab({ patientName, patientId }: SimilarityTabProps) {
                   <div className="space-y-1">
                     <div className="flex items-center justify-between text-sm">
                       <span className="font-medium">Similarity:</span>
-                      <span
-                        className={`font-semibold ${getSimilarityColor(patient.similarity)}`}
-                      >
+                      <span className={`font-semibold ${getSimilarityColor(patient.similarity)}`}>
                         {patient.similarity}%
                       </span>
                     </div>
@@ -224,15 +218,14 @@ export function SimilarityTab({ patientName, patientId }: SimilarityTabProps) {
               </div>
 
               <div className="bg-gray-50 p-3 rounded-lg mb-4">
-                <p className="text-sm text-on-surface-variant">
-                  {patient.notes}
-                </p>
+                <p className="text-sm text-on-surface-variant">{patient.notes}</p>
               </div>
 
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => handleViewPatient(patient.id)}
+                aria-label={`View details for ${patient.name}`}
               >
                 <Eye className="w-4 h-4 mr-1" />
                 View Details

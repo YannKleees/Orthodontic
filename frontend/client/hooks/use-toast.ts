@@ -1,9 +1,18 @@
+/* ============================================================================
+   Toast state machine (headless)
+   ----------------------------------------------------------------------------
+   Lightweight global store for transient toasts with:
+     • Bounded capacity (TOAST_LIMIT).
+     • Deferred removal (TOAST_REMOVE_DELAY) after dismiss.
+     • Action-driven reducer with ADD/UPDATE/DISMISS/REMOVE semantics.
+   Exposes both imperative (toast()) and reactive (useToast()) APIs.
+============================================================================= */
 import * as React from "react";
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
 
-const TOAST_LIMIT = 1;
-const TOAST_REMOVE_DELAY = 1000000;
+const TOAST_LIMIT = 1;                 // max concurrent toasts
+const TOAST_REMOVE_DELAY = 1000000;    // ms until hard removal post-dismiss
 
 type ToasterToast = ToastProps & {
   id: string;
@@ -52,6 +61,7 @@ interface State {
 
 const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
+/** Schedule physical removal of a toast after a grace period. */
 const addToRemoveQueue = (toastId: string) => {
   if (toastTimeouts.has(toastId)) {
     return;
@@ -87,8 +97,7 @@ export const reducer = (state: State, action: Action): State => {
     case "DISMISS_TOAST": {
       const { toastId } = action;
 
-      // ! Side effects ! - This could be extracted into a dismissToast() action,
-      // but I'll keep it here for simplicity
+      // Side-effect: enqueue removal for the targeted toast(s).
       if (toastId) {
         addToRemoveQueue(toastId);
       } else {
@@ -125,6 +134,7 @@ export const reducer = (state: State, action: Action): State => {
 
 const listeners: Array<(state: State) => void> = [];
 
+/** In-memory source of truth mirrored to all subscribers. */
 let memoryState: State = { toasts: [] };
 
 function dispatch(action: Action) {
@@ -136,6 +146,7 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">;
 
+/** Imperative API to create a toast and obtain control handles. */
 function toast({ ...props }: Toast) {
   const id = genId();
 
@@ -165,6 +176,7 @@ function toast({ ...props }: Toast) {
   };
 }
 
+/** Hook returning reactive state and helpers for toast orchestration. */
 function useToast() {
   const [state, setState] = React.useState<State>(memoryState);
 

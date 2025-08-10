@@ -1,6 +1,22 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 
+/** ============================================================================
+ * uploads.ts — Simulated multi-view upload + analysis pipeline
+ * =============================================================================
+ * DOMAIN
+ *  - Five canonical intra-oral views: up, down, left, right, centre.
+ *  - Each view progresses through: uploading → analyzing → completed.
+ *  - On completion of all views, a mosaic is generated (async).
+ * DESIGN
+ *  - In-memory state machine per view; progress is simulated using timers.
+ *  - Module-level (patientId, visitId) cached to link mosaic to a visit.
+ * VALIDATION
+ *  - zod schema protects numeric progress bounds and optional fields.
+ * OBSERVABILITY
+ *  - /progress/overview exposes aggregate metrics for dashboard widgets.
+ * ============================================================================ */
+
 // In-memory storage for upload views
 let uploadViews = [
   {
@@ -89,7 +105,7 @@ const UploadViewSchema = z.object({
 
 export const router = Router();
 
-// GET /api/uploads - Get all upload views
+/** GET /api/uploads — list the five canonical views and their states. */
 router.get("/", (req: Request, res: Response) => {
   try {
     res.json({
@@ -106,7 +122,7 @@ router.get("/", (req: Request, res: Response) => {
   }
 });
 
-// GET /api/uploads/:viewId - Get specific upload view
+/** GET /api/uploads/:viewId — return state for a specific view. */
 router.get("/:viewId", (req: Request, res: Response) => {
   try {
     const { viewId } = req.params;
@@ -132,7 +148,7 @@ router.get("/:viewId", (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/uploads/:viewId - Update upload view
+/** PUT /api/uploads/:viewId — patch a view’s state (validated). */
 router.put("/:viewId", (req: Request, res: Response) => {
   try {
     const { viewId } = req.params;
@@ -174,7 +190,10 @@ router.put("/:viewId", (req: Request, res: Response) => {
   }
 });
 
-// POST /api/uploads/:viewId/upload - Simulate file upload
+/** POST /api/uploads/:viewId/upload — begin simulated upload for a view.
+ *  - Persists req patient/visit for later mosaic generation.
+ *  - Advances progress (5–20% ticks) until 100%, then triggers analysis.
+ */
 router.post("/:viewId/upload", (req: Request, res: Response) => {
   try {
     const { viewId } = req.params;
@@ -238,7 +257,9 @@ router.post("/:viewId/upload", (req: Request, res: Response) => {
   }
 });
 
-// Function to simulate analysis
+/** Simulated analysis: deterministic finite-state transition to “completed”.
+ *  - On all views completed, triggers mosaic assembly for (patientId, visitId).
+ */
 async function startAnalysisSimulation(viewIndex: number) {
   const view = uploadViews[viewIndex];
   view.analyzing = true;
@@ -277,7 +298,7 @@ async function startAnalysisSimulation(viewIndex: number) {
   }, 300);
 }
 
-// POST /api/uploads/reset - Reset all upload views
+/** POST /api/uploads/reset — reinitialize all views to baseline. */
 router.post("/reset", (req: Request, res: Response) => {
   try {
     uploadViews = uploadViews.map((view) => ({
@@ -305,7 +326,7 @@ router.post("/reset", (req: Request, res: Response) => {
   }
 });
 
-// POST /api/uploads/bulk - Start bulk upload for all views
+/** POST /api/uploads/bulk — initiate simulated uploads for all views (staggered). */
 router.post("/bulk", (req: Request, res: Response) => {
   try {
     // Start upload simulation for all views
@@ -338,7 +359,7 @@ router.post("/bulk", (req: Request, res: Response) => {
   }
 });
 
-// GET /api/uploads/progress/overview - Get overall upload progress
+/** GET /api/uploads/progress/overview — cohort-level progress metrics. */
 router.get("/progress/overview", (req: Request, res: Response) => {
   try {
     const totalViews = uploadViews.length;

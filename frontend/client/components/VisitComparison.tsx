@@ -1,4 +1,12 @@
-/* client/components/VisitComparison.tsx -------------------------- */
+/* =============================================================================
+   VisitComparison
+   -----------------------------------------------------------------------------
+   Component for paired comparative analysis of two distinct visits for a
+   single patient: a baseline and a follow-up.
+   Outputs:
+     • Side-by-side mosaics with annotated PAR scores.
+     • Tabulated per-component PAR differences (Δ) with visual color coding.
+============================================================================= */
 import { useVisitComparison } from "@/hooks/useVisitComparison";
 import { MosaicWithBoxes } from "./MosaicWithBoxes";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -14,7 +22,7 @@ export function VisitComparison({
 
   return (
     <div className="space-y-8">
-      {/* 1 – images */}
+      {/* Mosaics: visual baseline vs follow-up */}
       <div className="grid md:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
@@ -33,7 +41,7 @@ export function VisitComparison({
         <Card>
           <CardHeader>
             <p className="font-medium">
-              {new Date(data.after.date).toLocaleDateString()} (follow‑up)
+              {new Date(data.after.date).toLocaleDateString()} (follow-up)
             </p>
             <p className="text-sm text-muted-foreground">
               Total PAR: {data.after.parScore} &nbsp;
@@ -54,14 +62,14 @@ export function VisitComparison({
         </Card>
       </div>
 
-      {/* 2 – per‑component table */}
+      {/* Quantitative Δ table: per-component breakdown */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b">
               <th className="text-left py-2">Component</th>
               <th>Baseline</th>
-              <th>Follow‑up</th>
+              <th>Follow-up</th>
               <th>Δ</th>
             </tr>
           </thead>

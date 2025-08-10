@@ -1,6 +1,20 @@
-/* ------------------------------------------------------------------ */
-/*  PatientCards – mosaic preview, quick stats, static info & notes   */
-/* ------------------------------------------------------------------ */
+/**
+ * @file PatientCards.tsx
+ * @brief Dashboard card set: mosaic preview, PAR-weighted summary, notes,
+ *        PDF export, and longitudinal progress (first vs latest).
+ *
+ * @data-flow
+ * - Fetch visits → pick latest completed (or provided visitId).
+ * - Fetch PAR components for current/first/latest → compute weighted totals.
+ * - Render: mosaic preview, per-component table (score × weight), totals,
+ *   notes drawer (simple visit.notes field), progress drawer (delta table).
+ *
+ * @scoring
+ * - Uses a Richmond-style weight map (subset of 11 PAR components), producing
+ *   a single scalar ∑(score_i × weight_i). This is display-only; authoritative
+ *   PAR persists elsewhere in the system.
+ */
+
 import { useState, useEffect } from "react";
 import type { Visit }          from "@/hooks/types";
 import { useVisits, usePARComponentList } from "@/hooks/useApi";
@@ -12,7 +26,7 @@ import { apiClient }           from "@/lib/api";
 import "./CommentButton.css";
 import "./FancyDownloadButton.css";
 
-/* ---------- Richmond weights ------------------------------------ */
+/** Richmond-style weights and maxima for the displayed subset. */
 const META: Record<string,{label:string;weight:number;max:number}> = {
   uppercrowding:{label:"Upper Crowding",weight:1,max:5},
   lowercrowding:{label:"Lower Crowding",weight:1,max:5},
@@ -23,15 +37,20 @@ const META: Record<string,{label:string;weight:number;max:number}> = {
   crossbite    :{label:"Crossbite",     weight:1,max:4},
   centerline   :{label:"Centerline",    weight:4,max:4},
 };
+
+/** Canonicalizes a component label to a stable key into META. */
 const canon = (s="")=>s.replace(/[^a-z]/gi,"").toLowerCase();
 
-/* ------------------------------------------------------------------ */
-/*  Wrapper – choose latest completed visit                          */
-/* ------------------------------------------------------------------ */
 interface WrapperProps{
   patientId:string; patientName:string; visitId?:string;
   onOpenFull:(pid:string,pname:string,vid:string)=>void;
 }
+
+/**
+ * PatientCardsWrapper
+ * Selects a visit (explicit or latest completed) and defers to Inner.
+ * Provides skeletons for loading/empty states.
+ */
 export default function PatientCardsWrapper(props:WrapperProps){
   const { patientId, visitId } = props;
   const { data:visitsData, loading } = useVisits(patientId);
@@ -45,20 +64,22 @@ export default function PatientCardsWrapper(props:WrapperProps){
   if (!picked) return <Stub text="Upload a visit to see analysis"/>;
   return <Inner {...props} visit={picked}/>;
 }
+
 const Stub = ({text}:{text:string}) =>
   <div className="h-40 flex items-center justify-center text-gray-500">{text}</div>;
 
-/* ------------------------------------------------------------------ */
-/*  Inner                                                             */
-/* ------------------------------------------------------------------ */
 interface InnerProps extends WrapperProps{ visit:Visit }
+
+/**
+ * Inner
+ * Fetches component sets needed for: current snapshot, first vs latest delta,
+ * and renders the full card layout.
+ */
 function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
-  /* ---------- current visit boxes -------------------------------- */
   const { data:currentBoxesRaw, loading:boxesLoading } =
     usePARComponentList(patientId, visit.id);
   const currentBoxes = Array.isArray(currentBoxesRaw)?currentBoxesRaw:[];
 
-  /* ---------- first vs latest for progress drawer ---------------- */
   const { data:visitsData } = useVisits(patientId);
   const visits:Visit[] = Array.isArray(visitsData)?visitsData:[];
   const sorted = [...visits].filter(v=>v.status==="completed")
@@ -66,19 +87,21 @@ function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
   const firstVisit  = sorted[0];
   const latestVisit = sorted[sorted.length-1];
 
-  /* hooks must run every render – safe‑guard with empty id */
+  /** Safe calls when IDs may be absent; hooks run every render. */
   const { data:firstBoxesRaw  } = usePARComponentList(patientId, firstVisit?.id  || "");
   const { data:latestBoxesRaw } = usePARComponentList(patientId, latestVisit?.id || "");
   const firstBoxes  = Array.isArray(firstBoxesRaw)?firstBoxesRaw:[];
   const latestBoxes = Array.isArray(latestBoxesRaw)?latestBoxesRaw:[];
 
-  /* ---------- UI state ------------------------------------------- */
   const [noteOpen,     setNoteOpen]     = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
   const [notes,        setNotes]        = useState(visit.notes??"");
   useEffect(()=>setNotes(visit.notes??""),[visit.id]);
 
-  /* ---------- helpers -------------------------------------------- */
+  /**
+   * Aggregates a component set into table rows and a weighted total:
+   * score_total = ∑(score_i × weight_i). Components missing from META are ignored.
+   */
   function buildRows(boxes:any[]){
     const dict:Record<string,{label:string;score:number;weight:number;total:number}> =
       Object.entries(META).reduce((a,[k,m])=>{
@@ -100,10 +123,16 @@ function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
       diff  :last.rows[i].score-first.rows[i].score,
   }));
 
+  /** Persists visit.notes for the selected visit. */
   async function saveNotes(){
     await apiClient.updateVisit(patientId, visit.id, { notes });
     setNoteOpen(false);
   }
+
+  /**
+   * Requests a server-side PDF generation for the current visit and opens it
+   * when available. HEAD check verifies the returned URL before opening.
+   */
   async function downloadPdf(){
     const res = await fetch(`/api/reports/${patientId}/generate`,{
       method:"POST", headers:{ "Content-Type":"application/json"},
@@ -118,14 +147,11 @@ function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
 
   if (boxesLoading) return <Stub text="Loading…"/>;
 
-  /* ---------- render --------------------------------------------- */
   return (
     <div className="w-full max-w-[1060px] mx-auto p-3">
       <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-[32px] p-4 shadow-xl border-2 border-white">
 
-        {/* top block ------------------------------------------------ */}
         <div className="flex flex-col lg:flex-row gap-4">
-          {/* mosaic */}
           <div className="flex-1">
             <div className="relative bg-white rounded-[24px] shadow-lg border-2 border-gray-200 p-4 aspect-[3/2]">
               <PatientMosaic visitId={visit.id} className="h-full"/>
@@ -137,7 +163,6 @@ function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
             </div>
           </div>
 
-          {/* stats */}
           <div className="flex-1 bg-white rounded-[24px] shadow-lg border-2 border-gray-200 p-4 h-[320px] overflow-y-auto">
             <header className="text-center pb-2 border-b border-gray-100">
               <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -149,10 +174,9 @@ function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
               </p>
             </header>
 
-            {/* total */}
             <div className="mt-4 bg-blue-50 border border-blue-200 p-3 rounded-lg">
               <div className="flex justify-between text-sm">
-                <span className="font-medium text-blue-800">Total PAR Score</span>
+                <span className="font-medium text-blue-800">Total PAR Score</span>
                 <span className="text-lg font-bold text-blue-600">{cur.par}</span>
               </div>
               <div className="h-1.5 w-full bg-blue-200 rounded-full mt-1">
@@ -161,7 +185,6 @@ function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
               </div>
             </div>
 
-            {/* breakdown */}
             <div className="mt-3 text-xs border border-blue-100 rounded-lg overflow-hidden">
               <div className="bg-blue-50 px-2 py-1 text-blue-800 font-medium border-b border-blue-100">
                 PAR Components
@@ -192,9 +215,7 @@ function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
           </div>
         </div>
 
-        {/* ---------- action bar -------------------------------- */}
         <div className="flex gap-3 mt-6">
-          {/* comment */}
           <button className="bookmarkBtn" onClick={()=>setNoteOpen(o=>!o)} type="button">
             <span className="IconContainer">{<svg fill="white" viewBox="0 0 512 512" height="1em">
                 <path d="M123.6 391.3c12.9-9.4 29.6-11.8 44.6-6.4c26.5 9.6 56.2 15.1
@@ -214,8 +235,7 @@ function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
             <p className="text">Comment</p>
           </button>
 
-          {/* progress */}
-          <button className="downloadBtn" data-tooltip="Treatment progress"
+          <button className="downloadBtn" data-tooltip="Treatment progress"
                   onClick={()=>setProgressOpen(o=>!o)} type="button">
             <div className="downloadWrapper">
               <div className="downloadText">Progress</div>
@@ -229,8 +249,7 @@ function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
             </div>
           </button>
 
-          {/* download */}
-          <button className="downloadBtn" data-tooltip="Download PDF"
+          <button className="downloadBtn" data-tooltip="Download PDF"
                   onClick={downloadPdf} type="button">
             <div className="downloadWrapper">
               <div className="downloadText">Download</div>
@@ -243,7 +262,6 @@ function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
           </button>
         </div>
 
-        {/* --- notes drawer ------------------------------------ */}
         {noteOpen && (
           <div className="mt-4 space-y-2 animate-slide-down">
             <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={4}
@@ -259,10 +277,8 @@ function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
           </div>
         )}
 
-        {/* --- progress drawer --------------------------------- */}
         {progressOpen && firstVisit && latestVisit && (
           <div className="mt-4 animate-slide-down">
-            {/* mosaics */}
             <div className="grid grid-cols-2 gap-4">
               {[
                 {v:firstVisit,  label:"BEFORE",  color:"bg-red-600"},
@@ -280,7 +296,6 @@ function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
               ))}
             </div>
 
-            {/* numbers */}
             <div className="mt-4">
               <h4 className="font-medium mb-2">PAR evolution</h4>
               <div className="flex items-center gap-3 mb-3">
@@ -324,5 +339,4 @@ function Inner({patientId,patientName,visit,onOpenFull}:InnerProps){
   );
 }
 
-/* ------------------------------------------------------------------ */
 export { PatientCardsWrapper as PatientCards };

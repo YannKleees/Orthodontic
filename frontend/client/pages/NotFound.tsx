@@ -1,3 +1,14 @@
+/** ============================================================================
+ * pages/NotFound.tsx — 404 boundary (routing guard)
+ * =============================================================================
+ * PURPOSE
+ *  - Terminal UI for unmatched client-side routes; logs path for observability.
+ * RATIONALE
+ *  - In SPAs, broken deep links or stale bookmarks surface as unmatched paths.
+ *    Emitting a structured console error supports QA and analytics triage.
+ * UX
+ *  - Presents a neutral 404 with a deterministic return-to-home affordance.
+ * ============================================================================ */
 import { useLocation } from "react-router-dom";
 import { useEffect } from "react";
 

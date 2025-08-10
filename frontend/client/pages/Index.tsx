@@ -1,3 +1,29 @@
+/** ============================================================================
+ * pages/Index.tsx — Application shell (patient-centric workflow)
+ * =============================================================================
+ * PURPOSE
+ *  - Orchestrates the primary UI: sidebars, tabbed workspaces, and content panes
+ *    for patient dashboards, visits, reports, similarity, image upload, and
+ *    PAR annotation workspaces.
+ *
+ * SCIENTIFIC/CLINICAL CONTEXT
+ *  - Supports a longitudinal orthodontic workflow where the Peer Assessment
+ *    Rating (PAR) and per-component metrics are computed, reviewed, and tracked
+ *    across visits. This shell coordinates state transitions (e.g., upload →
+ *    analysis → dashboard) and ensures derived metrics (e.g., currentPARScore)
+ *    are reflected consistently via React Query invalidations and event-based
+ *    updates (e.g., "par-score-updated").
+ *
+ * DESIGN NOTES
+ *  - Tabs are the core navigation primitive. A patient dashboard tab is keyed
+ *    by patientId; other tabs (upload, mosaic, workspace) are keyed to visitId
+ *    where relevant to maintain referential integrity and avoid UI collisions.
+ *  - The sidebar is role-sensitive: patients/visits/similarity panels reuse the
+ *    same layout with different data sources, improving cognitive continuity.
+ *  - React Query is used to centralize data fetching, caching, and invalidation.
+ *    Local state drives only ephemeral UI (active tab, drawer, etc.).
+ * ============================================================================ */
+
 import { apiClient, apiUtils } from "@/lib/api";
 import { useState } from "react";
 import { IconSidebar } from "../components/IconSidebar";
@@ -19,6 +45,10 @@ import { usePatients } from "../hooks/useApi";
 import { PARComponentsProvider } from "../hooks/usePARComponentsContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+
+/** Tab model for the top navigation bar.
+ *  type=patient is canonical; other types represent task-specific views.
+ *  `visitId` is optional on patient tabs and indicates which visit to show. */
 export interface Tab {
   id: string;
   name: string;
@@ -35,24 +65,37 @@ export interface Tab {
     | "bulk-processing";
   patientId?: string;
   patientName?: string;
-  visitId?:    string;
-  compareTo?: string;
+  visitId?:    string;   // current visit context for dashboards/workspaces
+  compareTo?: string;    // optional comparison target (e.g., previous visit)
 }
 
 export default function Index() {
+  /** Active tab identifier; null means no selection yet. */
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+
+  /** Sidebar expansion state for patients/visits/similarity panels. */
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+
+  /** High-level UI section (controls which sidebar is visible). */
   const [activeSection, setActiveSection] = useState("patients");
-  const queryClient            = useQueryClient();  
+
+  /** React Query client for targeted cache invalidation. */
+  const queryClient = useQueryClient();
+
+  /** Array of open tabs; order determines rendering and close behavior. */
   const [openTabs, setOpenTabs] = useState<Tab[]>([]);
-  // Handle section changes - open appropriate sidebars
+
+  /** Handles switching UI sections; guarantees sidebar is open so the user
+   *  can immediately interact (e.g., select a patient, filter visits). */
   const handleSectionChange = (section: string) => {
     setActiveSection(section);
-    setSidebarExpanded(true); // Always open sidebar when switching sections
+    setSidebarExpanded(true);
   };
 
-  // Get dynamic patient data from API
+  /** Pulls patient list for sidebar/dashboards. Auto-refetch is triggered by
+   *  a custom event whenever PAR totals are re-computed elsewhere. */
   const { data: patientsData, loading: patientsLoading, refetch: refetchPatients} = usePatients();
+
   useEffect(() => {
     const handleScoreUpdate = () => {
       refetchPatients();
@@ -62,7 +105,9 @@ export default function Index() {
       window.removeEventListener("par-score-updated", handleScoreUpdate);
     };
   }, [refetchPatients]);
-  // Add null/empty check
+
+  /** Normalize/defensively map API patients to sidebar-ready items.
+   *  Handles empty/null cases to preserve referential safety. */
   const availablePatients = patientsData && Array.isArray(patientsData) && patientsData.length > 0
     ? patientsData.map((p) =>  ({
         id: p.id,
@@ -76,15 +121,14 @@ export default function Index() {
       }))
     : [];
 
+  /** Open (or focus) a patient dashboard tab keyed by patientId.
+   *  Ensures single-instance semantics per patient. */
   const handleOpenPatientTab = (patientId: string, patientName: string) => {
-    // Check if tab is already open
     const existingTab = openTabs.find((tab) => tab.id === patientId);
     if (existingTab) {
       setActiveTabId(patientId);
       return;
     }
-
-    // Add new tab
     const newTab: Tab = {
       id: patientId,
       name: patientName,
@@ -92,15 +136,14 @@ export default function Index() {
       patientId: patientId,
       patientName: patientName,
     };
-
     setOpenTabs((prev) => [...prev, newTab]);
     setActiveTabId(patientId);
   };
 
+  /** Close a tab by id. If the active tab is closed, focus the rightmost tab
+   *  to preserve user continuity. */
   const handleCloseTab = (tabId: string) => {
     setOpenTabs((prev) => prev.filter((tab) => tab.id !== tabId));
-
-    // If we're closing the active tab, switch to another one
     if (activeTabId === tabId) {
       const remainingTabs = openTabs.filter((tab) => tab.id !== tabId);
       if (remainingTabs.length > 0) {
@@ -111,10 +154,14 @@ export default function Index() {
     }
   };
 
+  /** Focus a tab by id without mutating tab order. */
   const handleTabChange = (tabId: string) => {
     setActiveTabId(tabId);
   };
 
+  /** Begin creating a visit in a dedicated "visit" tab (wizard).
+   *  Patient context is propagated so subsequent actions can route
+   *  to the correct dashboard and upload workflows. */
   const handleAddVisit = (patientId: string) => {
     const patInfo = availablePatients.find(p => p.id === patientId);
     if (!patInfo) return;
@@ -131,11 +178,12 @@ export default function Index() {
     setActiveTabId(visitId);
   };
 
+  /** After a visit is saved via wizard:
+   *  (1) close the transient visit tab;
+   *  (2) focus an existing patient dashboard or create one. */
   const handleVisitSave = (visitId: string) => {
-    /* 1  close the temporary wizard tab */
     if (activeTab?.type === "visit") handleCloseTab(activeTab.id);
 
-    /* 2  focus (or create) the PATIENT dashboard tab */
     const pid   = activeTab?.patientId ?? activeTab?.id!;
     const pname = activeTab?.patientName ?? activeTab?.name ?? "Patient";
 
@@ -151,71 +199,70 @@ export default function Index() {
     }
   };
 
+  /** Open an "Add Patient" form as a new tab; single-instance per timepoint. */
   const handleAddPatient = () => {
     const addPatientTab: Tab = {
       id: `add-patient-${Date.now()}`,
       name: "Add New Patient",
       type: "add-patient",
     };
-
     setOpenTabs((prev) => [...prev, addPatientTab]);
     setActiveTabId(addPatientTab.id);
   };
 
-const handlePatientSave = async (formData: { name: string; dateOfBirth: string }) => {
-  try {
-    const { success, data } = await apiClient.createPatient({
-      name:        formData.name,
-      dateOfBirth: formData.dateOfBirth,
-      age:         0,
-      visits:      [],
-      createdAt:   new Date().toISOString(),
-      status:      "Active",
-    });
-    if (!success) throw new Error("API failed");
+  /** Persist a newly created patient; then transition directly into the
+   *  upload pipeline (primary workflow entrypoint). */
+  const handlePatientSave = async (formData: { name: string; dateOfBirth: string }) => {
+    try {
+      const { success, data } = await apiClient.createPatient({
+        name:        formData.name,
+        dateOfBirth: formData.dateOfBirth,
+        age:         0,
+        visits:      [],
+        createdAt:   new Date().toISOString(),
+        status:      "Active",
+      });
+      if (!success) throw new Error("API failed");
 
-    await refetchPatients();
-    const pid = data.id;
-    const pname = data.name;
-    
-    // Close the Add Patient form/tab
-    if (activeTab?.type === "add-patient") handleCloseTab(activeTab.id);
-    
-    // Open the Upload window as the only tab and make it active
-    const uploadTabId = `upload-${pid}`;
-    setOpenTabs(prev => {
-      // Filter out any existing upload tab for this patient
-      const filtered = prev.filter(t => !(t.type === "upload" && t.patientId === pid));
-      // Add the new upload tab
-      return [...filtered, {
-        id: uploadTabId,
-        name: `Upload Images - ${pname}`,
-        type: "upload",
-        patientId: pid,
-        patientName: pname,
-      }];
-    });
-    setActiveTabId(uploadTabId);
+      await refetchPatients();
+      const pid = data.id;
+      const pname = data.name;
 
-    // Alert the user
-  } catch (err) {
-    console.error(err);
-    alert("Failed to add patient");
-  }
-};
+      if (activeTab?.type === "add-patient") handleCloseTab(activeTab.id);
 
+      // Promote the upload step to maximize adherence to imaging protocol
+      const uploadTabId = `upload-${pid}`;
+      setOpenTabs(prev => {
+        const filtered = prev.filter(t => !(t.type === "upload" && t.patientId === pid));
+        return [...filtered, {
+          id: uploadTabId,
+          name: `Upload Images - ${pname}`,
+          type: "upload",
+          patientId: pid,
+          patientName: pname,
+        }];
+      });
+      setActiveTabId(uploadTabId);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to add patient");
+    }
+  };
+
+  /** Open a full-screen mosaic for a given visit (or latest) in a dedicated tab.
+   *  This view is optimized for image review and PAR component overlays. */
   const handleOpenMosaicFullscreen = (
     patientId: string,
     patientName: string,
-    visitId?: string    
+    visitId?: string
   ) => {
     const targetVisit = visitId || "latest";
     const existingTab = openTabs.find(
-     (tab) =>
-       tab.type === "mosaic" &&
-       tab.patientId === patientId &&
-       tab.visitId   === targetVisit
-   );
+      (tab) =>
+        tab.type === "mosaic" &&
+        tab.patientId === patientId &&
+        tab.visitId   === targetVisit
+    );
 
     if (!existingTab) {
       const newTab: Tab = {
@@ -226,64 +273,61 @@ const handlePatientSave = async (formData: { name: string; dateOfBirth: string }
         patientName: patientName,
         visitId : targetVisit,
       };
-
       setOpenTabs((prev) => [...prev, newTab]);
       setActiveTabId(newTab.id);
     } else {
       setActiveTabId(existingTab.id);
     }
   };
-  // Index.tsx  (inside the component, right next to handleOpenMosaicFullscreen)
 
-  /** Called by <SidebarPanels section="visits" … onVisitClick /> */
-const handleOpenVisit = (
-  visitId: string,
-  patientId: string,
-  patientName: string
-) => {
-  /*───────────────────────────────────────────────────────────*
-   * 1  If a patient dashboard tab is already open, just focus
-   *    it **and** remember which visit should be displayed.   *
-   *───────────────────────────────────────────────────────────*/
-  const existing = openTabs.find(t => t.type === "patient" && t.id === patientId);
+  /** ----------------------------------------------------------------
+   *  Called by SidebarPanels when a visit row is clicked.
+   *  Behavior:
+   *   - If a patient dashboard is already open, retarget it to the
+   *     selected visit and focus it (to minimize tab sprawl).
+   *   - Otherwise create a patient dashboard already pointing at that visit.
+   *  ---------------------------------------------------------------- */
+  const handleOpenVisit = (
+    visitId: string,
+    patientId: string,
+    patientName: string
+  ) => {
+    const existing = openTabs.find(t => t.type === "patient" && t.id === patientId);
     if (existing) {
-    existing.compareTo = existing.visitId; 
-    existing.visitId   = visitId;     // ✱  set / overwrite the target visit
-    setActiveTabId(existing.id);
-    // forcing a re‑render because we mutated an object inside state
-    setOpenTabs([...openTabs]);
-    return;
+      // Mutate visit context on the existing tab (then force re-render)
+      existing.compareTo = existing.visitId;
+      existing.visitId   = visitId;
+      setActiveTabId(existing.id);
+      setOpenTabs([...openTabs]);
+      return;
     }
-
-  /*───────────────────────────────────────────────────────────*
-   * 2  Otherwise create a fresh patient dashboard tab that
-   *    already points at the requested visit.                 *
-   *───────────────────────────────────────────────────────────*/
-  const newTab: Tab = {
-        id: patientId,
-        name: patientName,
-        type: "patient",
-        patientId,
-        patientName,
-    visitId,                        // ✱  carried over
+    const newTab: Tab = {
+      id: patientId,
+      name: patientName,
+      type: "patient",
+      patientId,
+      patientName,
+      visitId,
+    };
+    setOpenTabs(prev => [...prev, newTab]);
+    setActiveTabId(newTab.id);
   };
-  setOpenTabs(prev => [...prev, newTab]);
-  setActiveTabId(newTab.id);
-};
 
-
-  // helpers for the new visit‑to‑workspace flow
+  /** Compose a workspace tab for interactive PAR editing for a visit. */
   const makeWorkspaceTab = (
     visitId: string,
     patientId: string,
     patientName: string
   ): Tab => ({
-    id: `workspace-${visitId}`,             // unique per visit
+    id: `workspace-${visitId}`,
     name: `Dental Analysis – ${patientName}`,
     type: "workspace",
     patientId,
     patientName,
   });
+
+  /** Focus an existing workspace or create one. Single-instance per visit
+   *  ensures transactional editing and consistency of overlay state. */
   const focusOrCreateWorkspace = (
     visitId: string,
     patientId: string,
@@ -300,6 +344,8 @@ const handleOpenVisit = (
     setActiveTabId(newTab.id);
   };
 
+  /** Open (or focus) the image upload tab for a given patient.
+   *  This is the typical entrypoint to a new visit’s imaging pipeline. */
   const handleOpenImageUpload = (patientId: string, patientName: string) => {
     const existingTab = openTabs.find(
       (tab) => tab.type === "upload" && tab.patientId === patientId,
@@ -319,51 +365,47 @@ const handleOpenVisit = (
     } else {
       setActiveTabId(existingTab.id);
     }
-  };  
-  /* ▸ AFTER – go straight to the *normal* patient dashboard             */
-/*            and show the brand‑new visit, no AI workspace tab.       */
-const handleUploadCompleted = async (visitId: string) => {
-  if (!activeTab || activeTab.type !== "upload") return;
+  };
 
-  /* 1 — refresh sidebar so the new visit appears immediately */
-  await refetchPatients?.();
+  /** After the imaging pipeline completes:
+   *   - Refetch patients to refresh sidebar metadata.
+   *   - Invalidate visit & patient caches to propagate scores/mosaics.
+   *   - Focus the patient dashboard pointed at the new visit.
+   *   - Close the upload tab to reduce cognitive load. */
+  const handleUploadCompleted = async (visitId: string) => {
+    if (!activeTab || activeTab.type !== "upload") return;
 
-  /* 2 — open (or refresh) the patient dashboard tab */
-  const pid = activeTab.patientId!;
-  queryClient.invalidateQueries({ queryKey: ["visits", pid] });
-  queryClient.invalidateQueries({ queryKey: ["patient", pid] });
-  const pname = activeTab.patientName!;
+    await refetchPatients?.();
 
-  setOpenTabs(prev => {
-    const existing = prev.find(t => t.type === "patient" && t.id === pid);
+    const pid = activeTab.patientId!;
+    queryClient.invalidateQueries({ queryKey: ["visits", pid] });
+    queryClient.invalidateQueries({ queryKey: ["patient", pid] });
+    const pname = activeTab.patientName!;
 
-    /* dashboard already open → replace with fresh object that
-       carries the *new* visitId so React re‑renders               */
-    if (existing) {
-      const updated = { ...existing, visitId };
-      return prev.map(t => (t.id === existing.id ? updated : t));
-    }
+    setOpenTabs(prev => {
+      const existing = prev.find(t => t.type === "patient" && t.id === pid);
+      if (existing) {
+        const updated = { ...existing, visitId };
+        return prev.map(t => (t.id === existing.id ? updated : t));
+      }
+      return [
+        ...prev,
+        {
+          id: pid,
+          name: pname,
+          type: "patient",
+          patientId: pid,
+          patientName: pname,
+          visitId,
+        } as Tab,
+      ];
+    });
 
-    /* otherwise create a brand‑new dashboard tab */
-    return [
-      ...prev,
-      {
-        id: pid,
-        name: pname,
-        type: "patient",
-        patientId: pid,
-        patientName: pname,
-        visitId,                      // ← highlight the latest visit
-      } as Tab,
-    ];
-  });
+    setActiveTabId(pid);
+    setOpenTabs(prev => prev.filter(t => t.id !== activeTab.id));
+  };
 
-  /* 3 — activate the dashboard tab (id === patientId) */
-  setActiveTabId(pid);
-
-  /* 4 — finally close the temporary “Upload” tab */
-  setOpenTabs(prev => prev.filter(t => t.id !== activeTab.id));
-};
+  /** Toggle patient sidebar, preserving user intent for quick access. */
   const handlePatientsClick = () => {
     if (activeSection === "patients") {
       setSidebarExpanded(!sidebarExpanded);
@@ -373,10 +415,11 @@ const handleUploadCompleted = async (visitId: string) => {
     }
   };
 
+  /** Open patients section and programmatically trigger search focus to reduce
+   *  friction when the user is explicitly seeking a patient. */
   const handleSearchClick = () => {
     setActiveSection("patients");
     setSidebarExpanded(true);
-    // Auto-focus the search when opened via search icon
     setTimeout(() => {
       const searchButton = document.querySelector("[data-search-toggle]");
       if (searchButton) {
@@ -385,12 +428,13 @@ const handleUploadCompleted = async (visitId: string) => {
     }, 100);
   };
 
+  /** Reset to patients panel when a sidebar sub-panel is closed. */
   const handleCloseSidebarPanel = () => {
     setActiveSection("patients");
   };
 
+  /** Lookup once for convenience in render logic. */
   const activeTab = openTabs.find(t => t.id === activeTabId);
-
 
   return (
     <div className="min-h-screen bg-background">
@@ -441,7 +485,6 @@ const handleUploadCompleted = async (visitId: string) => {
         />
       )}
 
-
       {activeSection === "similarity" && activeTab && (
         <SidebarPanels
           section="similarity"
@@ -450,12 +493,12 @@ const handleUploadCompleted = async (visitId: string) => {
           patientName={activeTab.patientName || activeTab.name}
           patientId={activeTab.patientId || activeTab.id}
           onItemClick={handleOpenPatientTab}
-          onVisitClick={handleOpenVisit} 
+          onVisitClick={handleOpenVisit}
         />
       )}
 
       <div className="flex">
-        {/* Main Content - Always show patient cards */}
+        {/* Main Content region. Patient cards are the default center panel. */}
         <div
           className={cn(
             "flex-1 transition-all duration-300",
@@ -467,7 +510,7 @@ const handleUploadCompleted = async (visitId: string) => {
               : "ml-20",
           )}
         >
-          {/* Tabs Bar - Always at top when tabs exist */}
+          {/* Global Tabs Bar (sticky) – presents open work contexts */}
           {openTabs.length > 0 && (
             <div className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
               <div className="flex items-center justify-between px-6 py-3">
@@ -496,7 +539,7 @@ const handleUploadCompleted = async (visitId: string) => {
           )}
 
           <div className="p-6 max-w-full overflow-hidden">
-            {/* Main Content */}
+            {/* Content Switchboard based on activeTab.type */}
             <div className="flex justify-center">
               {activeTab ? (
                 activeTab.type === "patient" ? (
@@ -539,7 +582,7 @@ const handleUploadCompleted = async (visitId: string) => {
                  )
                 ) : activeTab.type === "upload" ? (
                   <DentalImageUpload
-                    patientId={activeTab.patientId!}   // <-- new prop
+                    patientId={activeTab.patientId!}
                     patientName={activeTab.patientName!}
                     onAllCompleted={handleUploadCompleted}
                   />
@@ -556,7 +599,7 @@ const handleUploadCompleted = async (visitId: string) => {
                     onClose={() => handleCloseTab(activeTab.id)}
                   />
                 ) : (
-                  // For visits, reports, similarity - show patient cards
+                  /* Fallback: patient-centric cards for visits/reports/similarity */
                   <PatientCards
                     patientId={activeTab.patientId || activeTab.id}
                     patientName={activeTab.patientName || activeTab.name}
@@ -585,4 +628,3 @@ const handleUploadCompleted = async (visitId: string) => {
     </div>
   );
 }
-

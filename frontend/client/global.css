@@ -1,13 +1,25 @@
+/* ============================================================================
+ * global.css — Tailwind preflight + design tokens (HSL)
+ * =============================================================================
+ * THEME CONTRACT
+ *  - Tailwind config consumes HSL tokens via CSS variables. Using HSL allows
+ *    perceptually smoother hue/saturation adjustments and consistent alpha ops.
+ *  - Light/Dark tokens are isomorphic; only values switch in `.dark` scope.
+ * ACCESSIBILITY
+ *  - Foreground/background pairs target WCAG AA contrast on typical surfaces.
+ *  - Motion: minimal keyframed entrance animation with short duration to reduce
+ *    vestibular load while preserving affordance.
+ * ========================================================================== */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   /**
-   * Tailwind CSS theme
-   * tailwind.config.ts expects the following color variables to be expressed as HSL values.
-   * A different format will require also updating the theme in tailwind.config.ts.
-  */
+   * Color tokens — express values as HSL components (no `hsl()` wrapper here).
+   * Tailwind theme reads these via `hsl(var(--token))`.
+   */
   :root {
     --background: 0 0% 96.1%;
     --foreground: 222.2 84% 4.9%;
@@ -39,6 +51,7 @@
 
     --radius: 0.5rem;
 
+    /* Sidebar + surface system for application shells */
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
     --sidebar-primary: 240 5.9% 10%;
@@ -59,6 +72,7 @@
   }
 
   .dark {
+    /* Dark-mode tokens mirror the same semantic contract as :root */
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
 
@@ -86,6 +100,7 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
+
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;
@@ -105,16 +120,16 @@
     --patient-tab: 217.2 32.6% 17.5%;
   }
 }
+
+/* Micro-animation: short, non-intrusive downward slide-in (≈220ms) */
 .animate-slide-down{animation:slideDown .22s ease-out both}
 @keyframes slideDown{from{opacity:0;transform:translateY(-4px)}
                      to{opacity:1;transform:translateY(0)}}
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  /* Harmonize borders across components via theme token */
+  * { @apply border-border; }
 
-  body {
-    @apply bg-background text-foreground;
-  }
+  /* Global body foreground/background binding to tokens */
+  body { @apply bg-background text-foreground; }
 }

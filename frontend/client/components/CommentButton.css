@@ -1,6 +1,18 @@
-/* identical to the snippet you pasted – placed in its own file so
-   Tailwind’s pre‑flight styles don’t clash.  Feel free to move it
-   elsewhere and adjust the import path in PatientCards.tsx          */
+/**
+ * @file bookmark-button.css
+ * @purpose
+ *   Standalone pill-shaped "bookmark" CTA with icon expansion on hover.
+ *   Isolated from Tailwind preflight to preserve exact geometry/animation.
+ *
+ * @interaction
+ *   - Default: icon + text.
+ *   - :hover: icon container expands to cover text; text collapses (width→0).
+ *   - :active: micro-scale for tactile feedback.
+ *
+ * @accessibility
+ *   - Visual transitions only; does not interfere with layout or focus order.
+ *   - Pair with an aria-label on the triggering element in JSX.
+ */
 
 .bookmarkBtn {
   width: 130px;

@@ -1,8 +1,21 @@
-/* routes/par-components.ts  ───────────────────────────────────── */
+/** ============================================================================
+ * routes/par-components.ts — PAR component CRUD (in-memory)
+ * =============================================================================
+ * DOMAIN
+ *  - PAR (Peer Assessment Rating) sub-scores are stored as components with
+ *    Richmond-style labeling. Each component has a score, anatomical region,
+ *    and a 2D bounding box (image-space coordinates).
+ * DATA MODEL (temporary)
+ *  - In-memory bucket db[patientId][visitId] → PARComponent[]
+ *  - Replace with persistent storage in production (ACID needed for audit).
+ * VALIDATION
+ *  - zod schemas enforce biomechanical constraints (score ≥ 0; confidence
+ *    ∈ [0,100]; maxScore ≥ 1) and allowed component enumerations.
+ * ============================================================================ */
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 
-/* ─── in‑memory db  (swap for disk/db later) ──────────────────── */
+/* ─── in-memory db  (swap for disk/db later) ──────────────────── */
 type DB = { [pid:string]: { [vid:string]: any[] } };
 const db: DB = {};
 
@@ -26,7 +39,7 @@ const compSchema = z.object({
 });
 const patchSchema = compSchema.partial();
 
-/* ─── middleware to fetch / create bucket ─────────────────────── */
+/** Return (and lazily create) the component bucket for a visit. */
 function bucket(req:Request) {
   const { patientId, visitId } = req.params;
   db[patientId] ??= {};
@@ -34,15 +47,19 @@ function bucket(req:Request) {
   return db[patientId][visitId];
 }
 
-/* ─── router ──────────────────────────────────────────────────── */
+/** Router: exposes list/single/create/update/delete endpoints.
+ *  Notes:
+ *   - IDs are timestamp-derived; swap for ULIDs/UUIDs to improve sortability.
+ *   - lastModified is updated on write ops for audit consistency.
+ */
 export const router = Router();
 
-/* list ---------------------------------------------------------- */
+/* list: GET /:patientId/:visitId -------------------------------- */
 router.get("/:patientId/:visitId", (req,res)=>{
   res.json({ success:true, data: bucket(req) });
 });
 
-/* single -------------------------------------------------------- */
+/* single: GET /:patientId/:visitId/:cid -------------------------- */
 router.get("/:patientId/:visitId/:cid", (req,res)=>{
   const comp = bucket(req).find(c=>c.id === req.params.cid);
   return comp
@@ -50,7 +67,7 @@ router.get("/:patientId/:visitId/:cid", (req,res)=>{
     : res.status(404).json({success:false,error:"Not found"});
 });
 
-/* create -------------------------------------------------------- */
+/* create: POST /:patientId/:visitId ------------------------------ */
 router.post("/:patientId/:visitId", (req,res)=>{
   const parse = compSchema.safeParse(req.body);
   if (!parse.success)
@@ -61,7 +78,7 @@ router.post("/:patientId/:visitId", (req,res)=>{
   res.status(201).json({ success:true, data:comp });
 });
 
-/* update -------------------------------------------------------- */
+/* update: PUT /:patientId/:visitId/:cid -------------------------- */
 router.put("/:patientId/:visitId/:cid", (req,res)=>{
   const parse = patchSchema.safeParse(req.body);
   if (!parse.success)
@@ -75,7 +92,7 @@ router.put("/:patientId/:visitId/:cid", (req,res)=>{
   res.json({ success:true, data:list[idx] });
 });
 
-/* delete -------------------------------------------------------- */
+/* delete: DELETE /:patientId/:visitId/:cid ----------------------- */
 router.delete("/:patientId/:visitId/:cid", (req,res)=>{
   const list = bucket(req);
   const idx  = list.findIndex(c=>c.id === req.params.cid);

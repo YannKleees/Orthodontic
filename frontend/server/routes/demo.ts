@@ -1,3 +1,11 @@
+/** ============================================================================
+ * demo.ts — Minimal health/demo endpoint
+ * =============================================================================
+ * CONTRACT
+ *  - Returns a typed payload conforming to @shared/api:DemoResponse.
+ * USES
+ *  - Sanity check for server boot, proxy wiring, and CORS in local/dev.
+ * ============================================================================ */
 import { RequestHandler } from "express";
 import { DemoResponse } from "@shared/api";
 

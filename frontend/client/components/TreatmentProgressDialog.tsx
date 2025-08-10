@@ -1,6 +1,15 @@
-/* -----------------------------------------------
-   Full‑screen dialog that compares first vs latest
-   ---------------------------------------------- */
+/* =============================================================================
+   TreatmentProgressDialog
+   -----------------------------------------------------------------------------
+   Full-screen modal dialog for quantitative comparison between the earliest
+   recorded visit ("first") and the most recent visit ("latest") for a given
+   patient. Displays:
+     • Orthodontic mosaic images for both timepoints.
+     • Tabulated PAR score deltas (total and per-component).
+     • Color-coded performance indication (green for improvement, red for decline).
+
+   Requires: at least two completed visits with computed PAR scores.
+============================================================================= */
 import { Dialog, DialogContent, DialogHeader, DialogTitle } 
   from "@/components/ui/dialog";
 import { Button }           from "@/components/ui/button";
@@ -36,7 +45,7 @@ export function TreatmentProgressDialog({
 
         {ready && (
           <div className="flex flex-col gap-6 h-full overflow-hidden">
-            {/* ── mosaics ───────────────────────────────────── */}
+            {/* Image comparison: baseline vs. current mosaics */}
             <div className="grid grid-cols-2 gap-4 h-1/2">
               <figure className="border rounded relative overflow-hidden">
                 <img
@@ -61,10 +70,10 @@ export function TreatmentProgressDialog({
               </figure>
             </div>
 
-            {/* ── numbers ──────────────────────────────────── */}
+            {/* Numerical metrics: total PAR change + per-component breakdown */}
             <div className="flex flex-col gap-4 overflow-auto">
               <div className="flex items-center gap-4">
-                <span className="text-sm font-medium">Total PAR:</span>
+                <span className="text-sm font-medium">Total PAR:</span>
                 <span className="text-xl font-semibold">{before.parScore ?? "—"}</span>
                 <span className="text-2xl">→</span>
                 <span className="text-xl font-semibold">{after.parScore ?? "—"}</span>
@@ -114,7 +123,7 @@ export function TreatmentProgressDialog({
               </table>
             </div>
 
-            {/* ── footer ───────────────────────────────────── */}
+            {/* Dialog footer */}
             <div className="mt-auto flex justify-end">
               <Button variant="secondary" onClick={onClose}>
                 Close

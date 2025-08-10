@@ -1,3 +1,9 @@
+/* ============================================================================
+   Domain primitives and DTOs
+   ----------------------------------------------------------------------------
+   Type definitions for visits, patients, PAR annotations, similarity, reports.
+============================================================================= */
+
 /* ---------------------------- primitives ------------------------- */
 export type VisitStatus =
   | "completed"
@@ -8,47 +14,47 @@ export type VisitStatus =
 
 /* ---------------------------- PAR box ---------------------------- */
 export interface PARBox {
-  id         : string;          // unique inside a visit
-  component  : string;          // “Upper Crowding” …
-  score      : number;          // 0‑…..
-  maxScore   : number;          // component‑specific
-  coordinates: { x:number; y:number; width:number; height:number };
+  id         : string;          // unique within a visit
+  component  : string;          // e.g., “Upper Crowding”
+  score      : number;          // observed component score (integer scale)
+  maxScore   : number;          // component-specific theoretical maximum
+  coordinates: { x:number; y:number; width:number; height:number }; // image-space (px)
 }
 
 /* ---------------------------- Visit ------------------------------ */
 export interface Visit {
   id              : string;
   patientId       : string;
-  date            : string;     // ISO yyyy‑mm‑dd
+  date            : string;     // ISO-8601 (yyyy-mm-dd)
   time?           : string;
   type?           : string;
   status          : VisitStatus;
   doctor?         : string;
   description?    : string;
   treatmentPhase? : string;
-  parScoreAtVisit?: number;     // doctor’s manually entered
-  mosaicUrl?      : string;     // relative path in /static
-  parScore?       : number;     // AI aggregate ( Σ boxes )
-  boxes?          : PARBox[];
+  parScoreAtVisit?: number;     // clinician-entered scalar (overrides if present)
+  mosaicUrl?      : string;     // relative asset path
+  parScore?       : number;     // model-derived aggregate (Σ component scores)
+  boxes?          : PARBox[];   // component-level annotations
   nextVisitDate?  : string;
   notes?          : string;
-  mosaicWidth? : number;
-  mosaicHeight?: number
+  mosaicWidth?    : number;     // intrinsic image width (px)
+  mosaicHeight?   : number;     // intrinsic image height (px)
 }
 
 /* ---------------------------- Patient ---------------------------- */
 export interface Patient {
-  id          : string;
-  name        : string;
-  dateOfBirth : string;
-  age         : number;
-  condition?  : string;
-  parScore?   : number;       // latest PAR score for sidebar
-  currentPARScore?: number;
+  id              : string;
+  name            : string;
+  dateOfBirth     : string;
+  age             : number;
+  condition?      : string;
+  parScore?       : number;     // latest PAR for quick display (if precomputed)
+  currentPARScore?: number;     // alias for UI surfaces that expect a scalar
   treatmentUrgency?: "low" | "medium" | "high" | "emergency";
-  createdAt   : string;
-  status      : "Active" | "Archived" | "Completed" | "On Hold";
-  visits      : Visit[];
+  createdAt       : string;
+  status          : "Active" | "Archived" | "Completed" | "On Hold";
+  visits          : Visit[];
 }
 
 export interface PARComponent {
@@ -65,10 +71,10 @@ export interface PARComponent {
   toothRegion: string;
   score      : number;
   maxScore   : number;
-  confidence : number;
+  confidence : number;          // model confidence (0–100, %)
   previousScore?: number;
   coordinates: { x:number; y:number; width:number; height:number };
-  viewId     : string;
+  viewId     : string;          // mosaic subview identifier
   editable   : boolean;
   lastModified?: string;
   modifiedBy?  : string;
@@ -76,7 +82,7 @@ export interface PARComponent {
 
 /* ---------------------------- Similar ---------------------------- */
 export interface SimilarPatient extends Patient {
-  similarity: number;           // %
+  similarity: number;           // similarity index in percent
   outcome   : "excellent" | "good" | "fair";
   treatment : string;
   initialParScore?: number;

@@ -1,6 +1,22 @@
 /* ------------------------------------------------------------------ */
-/*  routes/visits.ts – in‑memory implementation                       */
+/*  routes/visits.ts – in-memory implementation                       */
 /* ------------------------------------------------------------------ */
+/** ============================================================================
+ * Visits API — visit lifecycle + disk-backed mosaics (hybrid source)
+ * =============================================================================
+ * SOURCES
+ *  - Primary: visits on disk (…/data/patients/<pid>/visits/<vid>/meta.json).
+ *  - Fallback: seeded in-memory demo if disk tree absent.
+ * CONTRACT
+ *  - date is sortable ISO (string) enabling stable chronology.
+ *  - mosaicUrl points to a thumbnail; if missing, a deterministic placeholder
+ *    is substituted to keep the UI resilient.
+ * VALIDATION
+ *  - zod schemas enforce status ∈ {completed, upcoming, cancelled} and bound
+ *    PAR values ∈ [0,50], aligning with PAR instrument limits.
+ * PERFORMANCE
+ *  - Directory scan is O(n visits). For production, index metadata in a DB.
+ * ============================================================================ */
 import { Router, Request, Response } from "express";
 import { z }                         from "zod";
 import type {SimilarPatient} from "@/hooks/types";
@@ -10,7 +26,7 @@ import path from "path";
 export interface Visit {
   id              : string;
   patientId       : string;
-  date            : string;           // ISO or yyyy‑mm‑dd
+  date            : string;           // ISO or yyyy-mm-dd
   time?           : string;
   type?           : string;
   status          : "completed" | "upcoming" | "cancelled";
@@ -29,6 +45,7 @@ const PLACEHOLDER = "/static/placeholders/mosaic_placeholder.png";
 const visits: Record<string, Visit[]> = {};
 
 /* --- helper to seed some demo records ---------------------------- */
+/** Initialize a synthetic longitudinal sequence for a patient (demo only). */
 function seedPatient(pid: string) {
   if (visits[pid]) return;
 
@@ -48,7 +65,7 @@ function seedPatient(pid: string) {
       treatmentPhase : "Active Treatment",
       parScoreAtVisit: rnd(30,50),
       notes          :
-        "Patient compliance excellent. Minor discomfort expected 24‑48 h."
+        "Patient compliance excellent. Minor discomfort expected 24-48 h."
     },
     {
       id   : `${pid}-visit-2`,
@@ -74,7 +91,7 @@ function seedPatient(pid: string) {
       status: "upcoming",
       doctor: "Dr. Sarah Johnson",
       description:
-        "6‑month evaluation and PAR reassessment scheduled.",
+        "6-month evaluation and PAR reassessment scheduled.",
       treatmentPhase : "Active Treatment",
       nextVisitDate  : "2024-03-22",
       notes          :
@@ -109,9 +126,17 @@ const UpdateVisitSchema = VisitSchema.partial();
 export const router = Router();
 
 /* -------- helpers ------------------------------------------------- */
+/** Safe lookup for a visit (patient-scoped). */
 const findVisit = (pid:string, vid:string)=> (visits[pid]||[]).find(v=>v.id===vid);
 
-/* -------- 1. List (with optional filters) ------------------------- */
+/** ============================================================================
+ * GET /:patientId — list visits, preferring on-disk metadata (if present).
+ * Adds resilient mosaic URLs (thumbnail + full) with placeholder fallback.
+ * Query:
+ *  - status?: filter by visit status
+ *  - type?:   filter by type (string equality)
+ *  - limit?:  clamp result length
+ * ========================================================================== */
 router.get("/:patientId", async (req, res) => {
   try {
     const { patientId } = req.params;
@@ -136,7 +161,7 @@ router.get("/:patientId", async (req, res) => {
         const raw = await fs.readFile(metaPath, "utf8");
         const meta: Visit = { ...JSON.parse(raw) };
 
-        /* add URLs the front‑end expects */
+        /* add URLs the front-end expects */
         /*  add a thumbnail url that ALWAYS resolves – 
             if real file missing we fall back to placeholder           */
         const expected = `/static/patients/${patientId}/visits/${dir}/mosaic.png`;
@@ -152,7 +177,7 @@ router.get("/:patientId", async (req, res) => {
         list.push(meta);
       }
     } catch {
-      /* no visits on disk – fall through to in‑memory demo */
+      /* no visits on disk – fall through to in-memory demo */
       list = (visits[patientId] ?? []).slice();
     }
     list.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
@@ -169,7 +194,7 @@ router.get("/:patientId", async (req, res) => {
    }
  });
 
-/* -------- 2. Upcoming BEFORE :visitId to avoid path clash --------- */
+/** GET /:patientId/upcoming — chronological list of scheduled visits. */
 router.get("/:patientId/upcoming", (req,res)=>{
   const { patientId } = req.params;
   const up = (visits[patientId]||[])
@@ -178,7 +203,7 @@ router.get("/:patientId/upcoming", (req,res)=>{
   res.json({ success:true, data:up, count:up.length });
 });
 
-/* -------- 3. History (completed only) ----------------------------- */
+/** GET /:patientId/history — reverse-chronological completed visits. */
 router.get("/:patientId/history", (req,res)=>{
   const { patientId } = req.params;
   const done = (visits[patientId]||[])
@@ -187,8 +212,7 @@ router.get("/:patientId/history", (req,res)=>{
   res.json({ success:true, data:done, count:done.length });
 });
 
-/* -------- 4. Single visit by VISIT ID ---------------------------- */
-/* Used by front‑end editor: /visits/visit/:vid --------------------- */
+/** GET /visit/:visitId — visit lookup by global visit ID. */
 router.get("/visit/:visitId", (req,res)=>{
   const { visitId } = req.params;
   const hit = Object.values(visits)
@@ -199,7 +223,7 @@ router.get("/visit/:visitId", (req,res)=>{
     : res.status(404).json({ success:false, error:"Visit not found"});
 });
 
-/* Also allow /:patientId/:visitId (kept for compatibility) --------- */
+/** GET /:patientId/:visitId — patient-scoped visit fetch (compat). */
 router.get("/:patientId/:visitId", (req,res)=>{
   const { patientId, visitId } = req.params;
   const v = findVisit(patientId, visitId);
@@ -208,7 +232,7 @@ router.get("/:patientId/:visitId", (req,res)=>{
     : res.status(404).json({ success:false, error:"Visit not found"});
 });
 
-/* -------- 5. Create ---------------------------------------------- */
+/** POST /:patientId — create visit; defaults ensure sortable dates and IDs. */
 router.post("/:patientId", (req,res)=>{
   const { patientId } = req.params;
   const check = VisitSchema.safeParse({ ...req.body, patientId });
@@ -227,7 +251,7 @@ router.post("/:patientId", (req,res)=>{
   res.status(201).json({ success:true, data:newVisit });
 });
 
-/* -------- 6. Update ---------------------------------------------- */
+/** PUT /:patientId/:visitId — partial update with schema validation. */
 router.put("/:patientId/:visitId", (req,res)=>{
   const { patientId, visitId } = req.params;
   const idx = (visits[patientId]||[]).findIndex(v=>v.id===visitId);
@@ -243,7 +267,7 @@ router.put("/:patientId/:visitId", (req,res)=>{
   res.json({ success:true, data:visits[patientId][idx] });
 });
 
-/* -------- 7. Delete ---------------------------------------------- */
+/** DELETE /:patientId/:visitId — idempotent removal (404 on miss). */
 router.delete("/:patientId/:visitId", (req,res)=>{
   const { patientId, visitId } = req.params;
   const idx = (visits[patientId]||[]).findIndex(v=>v.id===visitId);

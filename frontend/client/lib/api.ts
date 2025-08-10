@@ -1,23 +1,46 @@
+/** ==================================================================
+ * api.ts — Core Domain Entity Types
+ * ===================================================================
+ * Defines the main data structures for patient management,
+ * orthodontic treatment tracking, and reporting.
+ * These interfaces are the "schema contracts" between the client,
+ * backend API, and persistent storage.
+ * They ensure type-safety across all data flow layers.
+ * -------------------------------------------------------------------
+ * NOTE:
+ * - PAR scores refer to the Peer Assessment Rating, a clinical metric
+ *   for malocclusion severity, scored per component and aggregated.
+ * - The "currentPARScore" is often AI-derived, but can be clinician-verified.
+ * - Computed fields like `treatmentUrgency` are dynamic and not always stored.
+ * ===================================================================
+ */
 export interface Patient {
-  id: string; // Patient ID (e.g., PAT-1234567890)
-  name: string;
-  age: number; // Calculated from date of birth
-  dateOfBirth: string;
-  visits: Visit[]; // Array of all visits
-  createdAt: string;
-  status: "Active" | "Completed" | "On Hold";
-  
+  id: string;                          // Globally unique Patient ID (e.g., PAT-1234567890)
+  name: string;                        // Full patient name
+  age: number;                         // Derived from dateOfBirth
+  dateOfBirth: string;                 // ISO date string
+  visits: Visit[];                     // Chronological array of clinical visits
+  createdAt: string;                   // Record creation timestamp (ISO)
 
-  // Computed fields (calculated from visits)
-  currentPARScore?: number; // From latest visit
-  treatmentUrgency?: "low" | "medium" | "high" | "emergency"; // Calculated from PAR score
-  lastVisitDate?: string;
-  totalVisits?: number;
-  
+  status: "Active" | "Completed" | "On Hold"; // Lifecycle stage of treatment
+
+  /** Computed / Derived properties */
+  currentPARScore?: number;            // Latest visit PAR score
+  treatmentUrgency?: "low" | "medium" | "high" | "emergency"; // Derived from PAR
+  lastVisitDate?: string;               // ISO date of most recent visit
+  totalVisits?: number;                 // Aggregate count of visits
 }
 
+/** ==================================================================
+ * PARComponent — Represents a single measurable malocclusion metric
+ * ===================================================================
+ * Each component is scored independently, weighted in Richmond Index,
+ * and used to calculate total PAR.
+ * The coordinates refer to bounding boxes in mosaic images.
+ * -------------------------------------------------------------------
+ */
 export interface PARComponent {
-  id: string;
+  id: string;                          // Unique per visit
   component:
     | "Upper Crowding"
     | "Lower Crowding"
@@ -27,26 +50,36 @@ export interface PARComponent {
     | "Overbite"
     | "Crossbite"
     | "Centerline";
-  toothRegion: string;
-  score: number;
-  maxScore: number;
-  confidence: number;
-  previousScore?: number;
-  coordinates: { x: number; y: number; width: number; height: number };
-  viewId: string;
-  editable: boolean;
-  lastModified: string;
-  modifiedBy: string;
+  toothRegion: string;                 // Anatomical subset (e.g., "Anterior")
+  score: number;                       // Clinician/AI assigned score
+  maxScore: number;                    // Max possible for this component
+  confidence: number;                  // AI confidence (%)
+  previousScore?: number;              // For longitudinal comparison
+  coordinates: { x: number; y: number; width: number; height: number }; // in mosaic pixel space
+  viewId: string;                       // Which intraoral view this belongs to
+  editable: boolean;                    // UI flag for editability
+  lastModified: string;                 // ISO timestamp of last change
+  modifiedBy: string;                   // Origin of last change
 }
 
+/** ==================================================================
+ * Visit — A single patient interaction + AI + clinician review
+ * ===================================================================
+ * Encapsulates:
+ * - Raw data (images, notes)
+ * - Automated analysis results
+ * - Clinician review
+ * - Generated reports
+ * -------------------------------------------------------------------
+ */
 export interface Visit {
   id: string;
   patientId: string;
-  date: string; // When visit was created
-  images: File[] | string[]; // Uploaded dental images
-  notes?          : string;
+  date: string;                        // ISO timestamp of creation
+  images: File[] | string[];           // Original intraoral images (File in browser or path string)
+  notes?: string;                      // Clinician general notes
 
-  // AI Analysis Results
+  /** Automated AI Analysis results */
   aiAnalysis: {
     parScore: number;
     parComponents: {
@@ -59,24 +92,24 @@ export interface Visit {
       crossbite: number;
       centerline: number;
     };
-    detectedConditions: string[];
+    detectedConditions: string[];     // Named conditions detected
     treatmentUrgency: "low" | "medium" | "high" | "emergency";
-    confidence: number; // AI confidence percentage
-    processingTime: string;
-    mosaicImageUrl?: string; // Generated mosaic
+    confidence: number;               // Aggregate AI model confidence
+    processingTime: string;           // Duration of AI pipeline
+    mosaicImageUrl?: string;          // Path to generated mosaic image
   };
 
-  // Doctor Review
+  /** Clinician review of AI findings */
   doctorReview: {
     status: "pending" | "reviewed" | "approved";
-    reviewedBy?: string; // Doctor who reviewed
+    reviewedBy?: string;
     reviewDate?: string;
-    modifiedPARScore?: number; // If doctor modified the AI score
+    modifiedPARScore?: number;        // If clinician adjusted score
     doctorNotes?: string;
     treatmentRecommendations?: string[];
   };
 
-  // Generated Report
+  /** Generated clinical report */
   report: {
     id: string;
     generatedAt: string;
@@ -85,10 +118,14 @@ export interface Visit {
     downloadUrl?: string;
   };
 
-  status: "analyzing" | "completed" | "reviewed";
+  status: "analyzing" | "completed" | "reviewed"; // Processing/review state
   createdAt: string;
 }
 
+/** ==================================================================
+ * Report — Structured document summarising findings & plan
+ * ===================================================================
+ */
 export interface Report {
   id: string;
   patientId: string;
@@ -98,18 +135,25 @@ export interface Report {
   status: "ready" | "draft" | "pending";
   description: string;
   parScore?: number;
-  generatedBy: string;
-  fileUrl?: string;
+  generatedBy: string;                 // Origin (AI system / clinician)
+  fileUrl?: string;                     // Download path
   findings: string[];
   recommendations: string[];
 }
 
+/** ==================================================================
+ * SimilarPatient — Result of similarity search
+ * ===================================================================
+ * Represents a case from the patient corpus with high similarity to
+ * a given index patient, used for case-based reasoning and prognosis.
+ * -------------------------------------------------------------------
+ */
 export interface SimilarPatient {
   id: string;
   name: string;
   age: number;
-  condition: string;
-  similarity: number;
+  condition: string;                   // Primary diagnosis
+  similarity: number;                  // Similarity score (%)
   outcome: "excellent" | "good" | "fair" | "poor";
   treatment: string;
   treatmentDuration: string;
@@ -119,10 +163,13 @@ export interface SimilarPatient {
   improvementPercentage: number;
   orthodontist: string;
   complications: string;
-  patientSatisfaction: number;
-  
+  patientSatisfaction: number;         // Survey result (0-100)
 }
 
+/** ==================================================================
+ * UploadView — UI state tracking for image upload pipeline
+ * ===================================================================
+ */
 export interface UploadView {
   id: string;
   name: string;
@@ -130,8 +177,8 @@ export interface UploadView {
   uploading: boolean;
   analyzing: boolean;
   completed: boolean;
-  progress: number;
-  analysisProgress: number;
+  progress: number;                     // Upload % completion
+  analysisProgress: number;             // AI processing % completion
   imageUrl?: string;
   analysisResults?: {
     componentsDetected: number;

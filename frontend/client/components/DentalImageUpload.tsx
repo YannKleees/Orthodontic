@@ -1,6 +1,23 @@
-/* ------------------------------------------------------------------
-   DentalImageUpload – now sends ONE request to /api/upload/:patientId
-   ------------------------------------------------------------------ */
+/**
+ * @file DentalImageUpload.tsx
+ * @role
+ *   Minimal-upload workflow for a single visit: collects five canonical
+ *   intra-oral views, issues a single multipart POST to the back-end,
+ *   and hands back the created visit identifier.
+ *
+ * @protocol
+ *   POST /api/upload/:patientId
+ *   - field name: "images" (array, length=5) — expected by server-side multer:
+ *     upload.array("images", 5)
+ *   - response: Visit { id: string, ... }
+ *
+ * @scientific-notes
+ *   - Enforces completeness (5/5 views) before submission, matching model
+ *     assumptions for a fixed-layout mosaic (reduces domain shift).
+ *   - No client-side compression applied to preserve pixel fidelity; prefer
+ *     server-side preprocessing to align with training pipeline.
+ */
+
 import { useState, useRef } from "react";
 import { Upload, CheckCircle } from "lucide-react";
 import { Button } from "./ui/button";
@@ -9,10 +26,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { cn } from "../lib/utils";
 import { apiClient } from "@/lib/api";
 
-// Add Visit type definition or import it from your types/models
 type Visit = {
   id: string;
-  // Add other properties as needed
 };
 
 type ViewId = "up" | "down" | "left" | "right" | "centre";
@@ -26,11 +41,11 @@ type View = {
 };
 
 const VIEW_PRESET: View[] = [
-  { id: "up",     name: "Upper Jaw",  description: "Occlusal upper",  progress: 0 },
-  { id: "down",   name: "Lower Jaw",  description: "Occlusal lower",  progress: 0 },
-  { id: "left",   name: "Left Side",  description: "Left buccal",     progress: 0 },
-  { id: "right",  name: "Right Side", description: "Right buccal",    progress: 0 },
-  { id: "centre", name: "Front View", description: "Anterior",        progress: 0 },
+  { id: "up",     name: "Upper Jaw",  description: "Occlusal upper",  progress: 0 },
+  { id: "down",   name: "Lower Jaw",  description: "Occlusal lower",  progress: 0 },
+  { id: "left",   name: "Left Side",  description: "Left buccal",     progress: 0 },
+  { id: "right",  name: "Right Side", description: "Right buccal",    progress: 0 },
+  { id: "centre", name: "Front View", description: "Anterior",        progress: 0 },
 ];
 
 export function DentalImageUpload({
@@ -40,72 +55,66 @@ export function DentalImageUpload({
 }: {
   patientId: string;
   patientName: string;
-  onAllCompleted: (visitId: string) => void; 
+  onAllCompleted: (visitId: string) => void;
 }) {
   const [views, setViews] = useState<View[]>(VIEW_PRESET);
   const fileRefs = useRef<Record<ViewId, HTMLInputElement | null>>({} as any);
   const [uploading, setUploading] = useState(false);
-  const [submitted, setSubmitted] = useState(false); 
+  const [submitted, setSubmitted] = useState(false);
   const [visitId] = useState(() => `${patientId}-visit-${Date.now()}`);
-  /* helper: when all 5 files are chosen -> send to backend */
-  /* helper: push each view to /api/upload/:jobId/file --------------- */
- async function sendAll() {
-   setUploading(true);
 
-  /* ----------------------------------------------------------------
-     1) Assemble ONE multipart body with the five images
-        (field‑name must be **images** because
-        uploadRouter.post('/:patientId', upload.array('images', 5))
-        expects that key)
-  ----------------------------------------------------------------- */
-  const fd = new FormData();
-  views.forEach(v => fd.append("images", v.file!, v.file!.name));
+  /**
+   * sendAll
+   * @summary
+   *   Aggregates the five selected files into a single FormData payload and
+   *   submits to the upload endpoint. On success, propagates the Visit.id to
+   *   the parent so it can open the analysis workspace.
+   */
+  async function sendAll() {
+    setUploading(true);
 
-  /* 2) Send straight to the correct Express route
-        POST /api/upload/<patientId>
-        The backend returns the full Visit object.
-  ----------------------------------------------------------------- */
-  const { data: visit } = await apiClient.request<Visit>(
-    `/upload/${patientId}`,
-    { method: "POST", body: fd }
-  );
+    const fd = new FormData();
+    views.forEach(v => fd.append("images", v.file!, v.file!.name));
 
-  setUploading(false);
-  setSubmitted(true); 
-  onAllCompleted(visit.id);            // use the ID returned by the API
- }
-  /* handle one file selection */
+    const { data: visit } = await apiClient.request<Visit>(
+      `/upload/${patientId}`,
+      { method: "POST", body: fd }
+    );
+
+    setUploading(false);
+    setSubmitted(true);
+    onAllCompleted(visit.id);
+  }
+
+  /**
+   * onSelect
+   * @description
+   *   Registers a single view file and sets its progress to 100% locally.
+   *   Progress here reflects selection completeness, not network transfer.
+   */
   const onSelect = (vId: ViewId, file: File) => {
     setViews(prev =>
-      prev.map(v =>
-        v.id === vId ? { ...v, file, progress: 100 } : v,
-      ),
+      prev.map(v => (v.id === vId ? { ...v, file, progress: 100 } : v)),
     );
   };
 
-  /* watch for completeness */
   const allPicked = views.every(v => v.file);
 
   if (allPicked && !uploading && !submitted) {
-    // fire & forget (component will re‑render but flag prevents loops)
-    sendAll().catch(console.error);
+    void sendAll().catch(console.error);
   }
 
   return (
     <div className="w-full max-w-5xl mx-auto p-6">
       <div className="text-center mb-8">
-        <h2 className="text-3xl font-bold">
-          PAR Analysis – {patientName}
-        </h2>
-        <p>Upload the five intra‑oral views. AI will analyse them automatically.</p>
+        <h2 className="text-3xl font-bold">PAR Analysis – {patientName}</h2>
+        <p>Upload the five intra-oral views. AI will analyse them automatically.</p>
       </div>
 
       {uploading && (
         <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-center">
           <CheckCircle className="w-8 h-8 text-green-600 mx-auto mb-2" />
-          <p className="text-green-800 font-medium">
-            Upload finished – processing…
-          </p>
+          <p className="text-green-800 font-medium">Upload finished – processing…</p>
         </div>
       )}
 
@@ -114,9 +123,7 @@ export function DentalImageUpload({
           <Card key={view.id}>
             <CardHeader className="text-center pb-3">
               <CardTitle className="text-lg">{view.name}</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {view.description}
-              </p>
+              <p className="text-sm text-muted-foreground">{view.description}</p>
             </CardHeader>
 
             <CardContent>

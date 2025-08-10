@@ -1,3 +1,28 @@
+/**
+ * @file DentalMosaicWorkspace.tsx
+ * @role
+ *   Interactive clinical workspace for PAR (Peer Assessment Rating) review:
+ *   renders a fixed 5-view dental mosaic with model-generated component
+ *   overlays, supports clinician edits to per-component PAR sub-scores,
+ *   and summarizes the weighted total across components.
+ *
+ * @data-contract
+ *   - PAR_Component: canonical UI representation of a detected PAR element,
+ *     including mosaic-space coordinates and an editable score ∈ [0, maxScore].
+ *   - usePARComponentsContext(patientId, visitId) provides a reactive source
+ *     of PAR components for the active visit and mutation helpers.
+ *
+ * @scientific-notes
+ *   - Mosaic scaling: overlays are positioned in normalized percentages
+ *     relative to a nominal mosaic (here 300×200 per tile). This preserves
+ *     geometric validity under arbitrary CSS scaling/zoom.
+ *   - Human-in-the-loop: clinician score edits are captured at the component
+ *     level; the system recomputes totals, providing an auditable workflow
+ *     that mitigates propagation of model error.
+ *   - Reliability indicators: per-component confidence and PRE→POST deltas
+ *     expose uncertainty and directionality of change, supporting review.
+ */
+
 import { useState, useRef, useEffect } from "react";
 import {
   ChevronUp,
@@ -18,6 +43,14 @@ import { Textarea } from "./ui/textarea";
 import { Progress } from "./ui/progress";
 import { cn } from "../lib/utils";
 import { usePARComponentsContext } from "../hooks/usePARComponentsContext";
+
+/**
+ * Canonical UI model for a PAR sub-component overlay and score.
+ * @property coordinates  Bounding box in natural mosaic pixel space for the tile,
+ *                        later normalized to CSS percentages for rendering.
+ * @property confidence   Model confidence [%]; displayed as a micro-meter.
+ * @property previousScore Optional baseline to compute PRE→POST direction.
+ */
 interface PAR_Component {
   id: string;
   component:
@@ -40,12 +73,24 @@ interface PAR_Component {
   modifiedBy?: string;
 }
 
+/**
+ * Props for the mosaic workspace.
+ * @param patientName   Display label for header context.
+ * @param patientId     Foreign key for data hooks.
+ * @param hasPrevisousVisit  Enables PRE vs POST comparison UI when true.
+ */
 interface DentalMosaicWorkspaceProps {
   patientName: string;
   patientId: string;
   hasPrevisousVisit?: boolean;
 }
 
+/**
+ * DentalMosaicWorkspace
+ * @summary
+ *   Renders 5 canonical views with interactive PAR overlays. Allows
+ *   per-component score edits and note taking; summarizes overall PAR.
+ */
 export function DentalMosaicWorkspace({
   patientName,
   patientId,
@@ -58,15 +103,21 @@ export function DentalMosaicWorkspace({
   const [editScore, setEditScore] = useState<number>(0);
   const notesRef = useRef<HTMLTextAreaElement>(null);
 
-  // Get dynamic PAR component data from API
-  // TODO: Replace 'visitId' with the actual visitId value from props or context
-  const visitId = "current"; // Example placeholder, replace with real visitId
+  /**
+   * Data source for PAR components.
+   * @note Replace the placeholder visitId with routing or context state in app.
+   */
+  const visitId = "current";
   const {
     components: parComponents,
     updateComponent,
-    createComponent,          // (already used in Add‑tool)
+    createComponent,
   } = usePARComponentsContext(patientId, visitId);
 
+  /**
+   * Canonical 5-view grid layout. The grid positions map each view
+   * to a stable location for clinician familiarity and model calibration.
+   */
   const views = [
     { id: "up", name: "Upper", position: "top-center" },
     { id: "left", name: "Left", position: "middle-left" },
@@ -75,6 +126,7 @@ export function DentalMosaicWorkspace({
     { id: "down", name: "Lower", position: "bottom-center" },
   ];
 
+  /** Semantic color coding per component type for rapid visual parsing. */
   const componentColors = {
     "Upper Crowding": "bg-red-100 text-red-800 border-red-200",
     "Lower Crowding": "bg-red-100 text-red-800 border-red-200",
@@ -84,8 +136,12 @@ export function DentalMosaicWorkspace({
     Overbite: "bg-purple-100 text-purple-800 border-purple-200",
     Crossbite: "bg-yellow-100 text-yellow-800 border-yellow-200",
     Centerline: "bg-green-100 text-green-800 border-green-200",
-  };
+  } as const;
 
+  /**
+   * scoreColors
+   * @returns Tailwind classes representing low/medium/high severity bins.
+   */
   const scoreColors = (score: number, maxScore: number) => {
     const percentage = (score / maxScore) * 100;
     if (percentage <= 30) return "bg-green-100 text-green-800";
@@ -93,21 +149,30 @@ export function DentalMosaicWorkspace({
     return "bg-red-100 text-red-800";
   };
 
+  /** Glyphs indicating directionality of change vs. baseline. */
   const changeIcons = {
     improved: <ChevronUp className="w-3 h-3 text-green-600" />,
     worsened: <ChevronDown className="w-3 h-3 text-red-600" />,
     stable: <span className="w-3 h-3 text-gray-400">→</span>,
   };
 
+  /**
+   * Persist clinical notes (e.g., on blur).
+   * @future Wire to API with debounced persistence + provenance.
+   */
   const handleNotesBlur = () => {
-    // Auto-save notes on blur
     console.log("Auto-saving notes:", notes);
-    // In real app, this would save to backend
   };
 
+  /** Discrete zoom steps clamped to maintain readability and layout. */
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 25, 200));
   const handleZoomOut = () => setZoom((prev) => Math.max(prev - 25, 50));
 
+  /**
+   * Aggregate PAR totals across components.
+   * @note Weighted totals can be computed upstream; here we show raw Σ(score)
+   *       to reflect current editable values.
+   */
   const totalPARScore = parComponents.reduce(
     (sum, comp) => sum + comp.score,
     0,
@@ -117,11 +182,13 @@ export function DentalMosaicWorkspace({
     0,
   );
 
+  /** Begin edit session for a specific component’s score. */
   const handleEditScore = (componentId: string, currentScore: number) => {
     setEditingComponent(componentId);
     setEditScore(currentScore);
   };
 
+  /** Commit an edited score to the data context. */
   const handleSaveScore = () => {
     if (editingComponent) {
       updateComponent(editingComponent, { score: editScore });
@@ -129,11 +196,16 @@ export function DentalMosaicWorkspace({
     }
   };
 
+  /** Abort score edit and reset temporary state. */
   const handleCancelEdit = () => {
     setEditingComponent(null);
     setEditScore(0);
   };
 
+  /**
+   * Map a view identifier to CSS Grid cell coordinates.
+   * @invariant 3×3 grid with the centre tile reserved for "centre" view.
+   */
   const getGridPosition = (viewId: string) => {
     const positions = {
       up: "col-start-2 row-start-1",
@@ -147,7 +219,6 @@ export function DentalMosaicWorkspace({
 
   return (
     <div className="w-full max-w-7xl mx-auto p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-on-surface">
@@ -170,7 +241,7 @@ export function DentalMosaicWorkspace({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: 5-Tile Mosaic */}
+        {/* 5-tile mosaic */}
         <div className="lg:col-span-1">
           <Card>
             <CardHeader className="pb-3">
@@ -204,7 +275,7 @@ export function DentalMosaicWorkspace({
                       style={{ transform: `scale(${zoom / 100})` }}
                     />
 
-                    {/* PAR Component overlays */}
+                    {/* Component overlays: normalized to tile reference size (300×200) */}
                     {parComponents
                       .filter((comp) => comp.viewId === view.id)
                       .map((component) => (
@@ -222,8 +293,7 @@ export function DentalMosaicWorkspace({
                           }
                         >
                           <div className="absolute -top-8 left-0 bg-blue-500 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
-                            {component.component}: {component.score}/
-                            {component.maxScore}
+                            {component.component}: {component.score}/{component.maxScore}
                           </div>
                         </div>
                       ))}
@@ -246,7 +316,7 @@ export function DentalMosaicWorkspace({
           </Card>
         </div>
 
-        {/* Right: PAR Components */}
+        {/* PAR components list + editing */}
         <div className="lg:col-span-2">
           <Card>
             <CardHeader>
@@ -262,9 +332,7 @@ export function DentalMosaicWorkspace({
                   <div className="text-2xl font-bold text-primary">
                     {totalPARScore}
                   </div>
-                  <div className="text-sm text-on-surface-variant">
-                    PAR Score
-                  </div>
+                  <div className="text-sm text-on-surface-variant">PAR Score</div>
                 </div>
               </div>
             </CardHeader>
@@ -299,44 +367,28 @@ export function DentalMosaicWorkspace({
                             min="0"
                             max={component.maxScore}
                             value={editScore}
-                            onChange={(e) =>
-                              setEditScore(Number(e.target.value))
-                            }
+                            onChange={(e) => setEditScore(Number(e.target.value))}
                             className="w-16 px-2 py-1 border border-primary rounded text-center"
                           />
                           <span className="text-sm">/{component.maxScore}</span>
-                          <Button size="sm" onClick={handleSaveScore}>
-                            Save
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={handleCancelEdit}
-                          >
+                          <Button size="sm" onClick={handleSaveScore}>Save</Button>
+                          <Button size="sm" variant="outline" onClick={handleCancelEdit}>
                             Cancel
                           </Button>
                         </div>
                       ) : (
                         <div
                           className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 px-2 py-1 rounded"
-                          onClick={() =>
-                            handleEditScore(component.id, component.score)
-                          }
+                          onClick={() => handleEditScore(component.id, component.score)}
                         >
                           <div className="text-lg font-semibold">
                             {component.score}/{component.maxScore}
                           </div>
                           <Badge
                             variant="outline"
-                            className={scoreColors(
-                              component.score,
-                              component.maxScore,
-                            )}
+                            className={scoreColors(component.score, component.maxScore)}
                           >
-                            {Math.round(
-                              (component.score / component.maxScore) * 100,
-                            )}
-                            %
+                            {Math.round((component.score / component.maxScore) * 100)}%
                           </Badge>
                         </div>
                       )}
@@ -344,12 +396,8 @@ export function DentalMosaicWorkspace({
 
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div className="flex items-center gap-1">
-                        <span className="text-gray-500">Confidence:</span>{" "}
-                        {component.confidence}%
-                        <Progress
-                          value={component.confidence}
-                          className="h-1 w-16"
-                        />
+                        <span className="text-gray-500">Confidence:</span> {component.confidence}%
+                        <Progress value={component.confidence} className="h-1 w-16" />
                       </div>
                       {component.previousScore && (
                         <div className="flex items-center gap-1">
@@ -373,13 +421,11 @@ export function DentalMosaicWorkspace({
         </div>
       </div>
 
-      {/* Notes Section */}
+      {/* Notes */}
       <Card>
         <CardHeader>
           <CardTitle>Clinical Notes</CardTitle>
-          <p className="text-sm text-on-surface-variant">
-            Notes auto-save when you finish typing
-          </p>
+          <p className="text-sm text-on-surface-variant">Notes auto-save when you finish typing</p>
         </CardHeader>
         <CardContent>
           <Textarea
@@ -393,7 +439,7 @@ export function DentalMosaicWorkspace({
         </CardContent>
       </Card>
 
-      {/* PRE vs POST Comparison */}
+      {/* PRE vs POST comparison scaffold */}
       <Card>
         <CardHeader>
           <CardTitle>Treatment Comparison</CardTitle>
@@ -405,9 +451,7 @@ export function DentalMosaicWorkspace({
               <TabsTrigger
                 value="comparison"
                 disabled={!hasPrevisousVisit}
-                className={cn(
-                  !hasPrevisousVisit && "opacity-50 cursor-not-allowed",
-                )}
+                className={cn(!hasPrevisousVisit && "opacity-50 cursor-not-allowed")}
               >
                 PRE vs POST
                 {!hasPrevisousVisit && " (No previous visit)"}
@@ -416,9 +460,7 @@ export function DentalMosaicWorkspace({
 
             <TabsContent value="current" className="mt-4">
               <div className="text-center py-8">
-                <p className="text-on-surface-variant">
-                  Current visit analysis displayed above
-                </p>
+                <p className="text-on-surface-variant">Current visit analysis displayed above</p>
               </div>
             </TabsContent>
 

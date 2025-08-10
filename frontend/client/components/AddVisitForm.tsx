@@ -1,4 +1,3 @@
-/* eslint-disable react/prop-types */
 import { useState, useRef } from "react";
 import {
   Upload, Camera, Calendar, CheckCircle
@@ -9,9 +8,37 @@ import { Progress }      from "./ui/progress";
 import { cn }            from "@/lib/utils";
 import { apiClient }     from "@/lib/api";
 
-/* ------------------------------------------------------------------ */
-/* constants                                                          */
+/**
+ * @file AddVisitForm.tsx
+ * @description
+ * Visit-creation and upload wizard for the five standard intra-oral photographs:
+ * Upper occlusal, Lower occlusal, Left buccal, Frontal (centre), Right buccal.
+ *
+ * Clinical context:
+ * - These five views are a conventional minimum set for capturing malocclusion
+ *   features relevant to PAR components. They enable a deterministic mosaic
+ *   layout, consistent coordinate frame, and single-pass detection on the mosaic.
+ *
+ * Flow:
+ * 1) User selects exactly five images, one per canonical view.
+ * 2) A new visit is created server-side and images are uploaded (sequentially).
+ * 3) Backend composes the mosaic and triggers AI analysis (detection + PAR).
+ * 4) Parent is notified via onSave(visitId) to transition into the workspace.
+ *
+ * Performance:
+ * - Sequential upload keeps control flow simple for demos; this can be switched
+ *   to concurrent uploads without altering external behavior.
+ */
+
 type ViewId = "up" | "down" | "left" | "right" | "centre";
+
+/**
+ * VIEW_PRESET
+ * @description
+ * Ordered, canonical mapping between UI tiles and clinical views used by
+ * the mosaic builder on the backend. Preserving order reduces the chance
+ * of view-mixing, which can degrade detector performance.
+ */
 const VIEW_PRESET: { id:ViewId; label:string }[] = [
   { id:"up",     label:"Upper (occlusal)"  },
   { id:"down",   label:"Lower (occlusal)"  },
@@ -23,15 +50,26 @@ const VIEW_PRESET: { id:ViewId; label:string }[] = [
 interface Props {
   patientId  : string;
   patientName: string;
-  onSave     : (visitId:string)=>void;     // <- parent will open Workspace
+  onSave     : (visitId:string)=>void;
   onCancel   : ()=>void;
 }
 
-/* ------------------------------------------------------------------ */
+/**
+ * AddVisitForm
+ * @description
+ * Upload wizard that enforces the five-view set and coordinates creation of a
+ * server-side visit, image uploads, and analysis kick-off. The component is
+ * intentionally stateful to provide immediate visual feedback (thumbnail per
+ * tile, per-tile upload completion, step transitions).
+ *
+ * States:
+ * - "select": user selects files (one per view).
+ * - "uploading": files are being sent to the server.
+ * - "analysing": backend is composing mosaic and running AI.
+ */
 export default function AddVisitForm(props:Props) {
   const { patientId, patientName, onSave, onCancel } = props;
 
-  /* state for each of the five tiles */
   const [tiles, setTiles] = useState(
     VIEW_PRESET.map(v=>({ ...v, file:null as File|null, uploaded:false }))
   );
@@ -39,7 +77,15 @@ export default function AddVisitForm(props:Props) {
   const [visitId, setVisitId] = useState<string|null>(null);
   const inputs = useRef<Record<ViewId,HTMLInputElement|null>>({} as any);
 
-  /* helpers --------------------------------------------------------- */
+  /**
+   * createVisit
+   * @description
+   * Initializes a new visit on the server for the given patient.
+   * Returns the assigned visit identifier used for subsequent image uploads.
+   *
+   * Endpoint contract:
+   *   POST /visits/:patientId/visits → { id: string }
+   */
   const createVisit = async () => {
     const { data } = await apiClient.request<{id:string}>(
       `/visits/${patientId}/visits`,
@@ -49,6 +95,15 @@ export default function AddVisitForm(props:Props) {
     return data.id;
   };
 
+  /**
+   * uploadOne
+   * @description
+   * Uploads one image for a specific canonical view into the visit context.
+   * Files are appended via FormData to preserve filename metadata.
+   *
+   * Endpoint contract:
+   *   POST /visits/images/:visitId?view=<ViewId>
+   */
   const uploadOne = async (vid:string, view:ViewId, file:File) => {
     const fd = new FormData();
     fd.append("file", file, file.name);
@@ -58,20 +113,46 @@ export default function AddVisitForm(props:Props) {
     );
   };
 
+  /**
+   * runAnalysis
+   * @description
+   * Requests the backend to compose the mosaic and run PAR analysis
+   * (detection + weighted scoring) for the given visit.
+   *
+   * Endpoint contract:
+   *   POST /visits/:visitId/analyze
+   */
   const runAnalysis = (vid:string) =>
     apiClient.request(`/visits/${vid}/analyze`, { method:"POST" });
 
-  /* ---------------------------------------------------------------- */
+  /**
+   * handleFilePick
+   * @description
+   * Registers the selected file for a single canonical view. The UI shows a
+   * preview thumbnail for rapid verification (helps avoid view mix-ups).
+   */
   const handleFilePick = (view:ViewId, file:File) =>
     setTiles(t =>
       t.map(v=> v.id===view ? {...v, file} : v)
     );
 
+  /**
+   * startUpload
+   * @description
+   * Orchestrates the full workflow:
+   *  - creates a visit if needed,
+   *  - uploads images (sequentially for deterministic progress UI),
+   *  - triggers backend analysis,
+   *  - notifies parent on completion (to open the workspace).
+   *
+   * Note:
+   *  Sequential upload simplifies demo behavior; swapping to Promise.all
+   *  would improve latency when network concurrency is available.
+   */
   const startUpload = async () => {
     const vid = visitId ?? await createVisit();
     setStep("uploading");
 
-    /* sequential upload keeps demo simple – change to Promise.all for speed */
     for (const v of tiles) {
       if (!v.file) continue;
       await uploadOne(vid, v.id, v.file);
@@ -79,11 +160,10 @@ export default function AddVisitForm(props:Props) {
     }
 
     setStep("analysing");
-    await runAnalysis(vid);                // build mosaic & PAR on backend
-    onSave(vid);                           // <-- hand control back to parent
+    await runAnalysis(vid);
+    onSave(vid);
   };
 
-  /* ---------------------------------------------------------------- */
   if (step==="analysing")
     return (
       <div className="max-w-2xl mx-auto p-6">
@@ -103,7 +183,6 @@ export default function AddVisitForm(props:Props) {
       </div>
     );
 
-  /* ---------------------------------------------------------------- */
   return (
     <div className="max-w-5xl mx-auto p-6">
       <Card>
@@ -115,7 +194,7 @@ export default function AddVisitForm(props:Props) {
                 New Visit – {patientName}
               </CardTitle>
               <p className="text-sm text-gray-600 mt-1">
-                Upload the five standard intra‑oral views
+                Upload the five standard intra-oral views
               </p>
             </div>
             <div className="text-sm text-gray-500 flex items-center gap-2">
@@ -126,7 +205,6 @@ export default function AddVisitForm(props:Props) {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* tiles grid ------------------------------------------------ */}
           <div className="grid sm:grid-cols-3 gap-6">
             {tiles.map(v=>(
               <div key={v.id} className="flex flex-col items-center space-y-2">
@@ -158,7 +236,6 @@ export default function AddVisitForm(props:Props) {
             ))}
           </div>
 
-          {/* progress ------------------------------------------------- */}
           {step==="uploading" && (
             <Progress
               value={tiles.filter(t=>t.uploaded).length*20}
@@ -166,7 +243,6 @@ export default function AddVisitForm(props:Props) {
             />
           )}
 
-          {/* actions -------------------------------------------------- */}
           <div className="flex gap-3 pt-4">
             <Button
               className="flex-1"

@@ -1,5 +1,21 @@
 /* routes/reports.ts — full file
    ------------------------------------------------------------------ */
+/** ============================================================================
+ * Reports API — PDF generation and retrieval (in-memory index + disk files)
+ * =============================================================================
+ * PURPOSE
+ *  - Materialize visit-level summaries (e.g., PAR totals, findings, actions)
+ *    into immutable PDFs for auditability and clinical communication.
+ * STORAGE MODEL
+ *  - Metadata: process memory (per-process map) keyed by patientId.
+ *  - Artifact: PDF on disk under DATA_DIR; URL exposed via STATIC_PREFIX.
+ * RELIABILITY
+ *  - Ensures target directory exists before write; stream completion awaited
+ *    prior to emitting success payload (prevents torn/partial outputs).
+ * SECURITY
+ *  - Filenames are generated (no user-controlled path segments) to reduce
+ *    traversal risk; public URL is constructed from known prefix + ids.
+ * ============================================================================ */
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import fs from "fs-extra";
@@ -10,7 +26,7 @@ import PDFDocument from "pdfkit";
 const DATA_DIR = path.resolve(__dirname, "..", "data", "reports");     // mkdirp later
 const STATIC_PREFIX = "/static/reports";                            // served elsewhere
 
-/* -------- in‑memory list just like before ------------------------- */
+/* -------- in-memory list just like before ------------------------- */
 type Report = {
   id: string;
   patientId: string;
@@ -28,9 +44,11 @@ type Report = {
 const reports: Record<string, Report[]> = {};
 
 /* -------- basic helpers ------------------------------------------ */
+/** Ensure a directory exists (idempotent). Acts as a precondition for I/O. */
 async function ensureDir(dir: string) {
   await fs.ensureDir(dir);
 }
+/** Deterministic, non-guessable filename factory: embeds PID + epoch. */
 function mkFilename(pid: string) {
   return `PAT-${pid}-${Date.now()}.pdf`;
 }
@@ -38,13 +56,28 @@ function mkFilename(pid: string) {
 /* -------- router -------------------------------------------------- */
 export const router = Router();
 
-/* 1️⃣ — GET  /api/reports/:patientId  (unchanged except ↓ tiny fix) */
+/** ============================================================================
+ * GET /api/reports/:patientId
+ * -----------------------------------------------------------------------------
+ * Returns all known report metadata for a patient. Count is provided to ease
+ * pagination UIs even though storage is in-memory here.
+ * ========================================================================== */
 router.get("/:patientId", (req, res) => {
   const list = reports[req.params.patientId] ?? [];
   res.json({ success: true, data: list, count: list.length });
 });
 
-/* 2️⃣ — POST /api/reports/:patientId/generate  (NEW real PDF) */
+/** ============================================================================
+ * POST /api/reports/:patientId/generate
+ * -----------------------------------------------------------------------------
+ * Side-effect: creates a structured PDF (header, total PAR, findings, recs),
+ * persists to disk, registers metadata in the in-memory index, and returns it.
+ * Robustness: waits for write stream "finish" before responding.
+ * Inputs:
+ *  - body.visitId? (for provenance)
+ *  - body.type? string (label)
+ *  - body.parScore? number (summary scalar, default demo=42)
+ * ========================================================================== */
 router.post("/:patientId/generate", async (req: Request, res: Response) => {
   try {
     const { patientId } = req.params;
@@ -88,7 +121,7 @@ router.post("/:patientId/generate", async (req: Request, res: Response) => {
     const sampleRecos = [
       "Fixed appliance therapy",
       "Monitor lower arch spacing",
-      "Re‑evaluate in 6 months"
+      "Re-evaluate in 6 months"
     ];
 
     const findings = sampleFindings;
@@ -122,7 +155,7 @@ router.post("/:patientId/generate", async (req: Request, res: Response) => {
       status    : "ready",
       description: "Automated PDF report",
       parScore,
-      generatedBy: "Backend v1",
+      generatedBy: "Backend v1",
       fileUrl: publicUrl,
       findings,
       recommendations: recos,

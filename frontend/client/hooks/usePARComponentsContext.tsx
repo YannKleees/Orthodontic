@@ -1,6 +1,12 @@
-/* ------------------------------------------------------------------ */
-/*  hooks/usePARComponentsContext.tsx                                 */
-/* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------
+   hooks/usePARComponentsContext.tsx
+   ------------------------------------------------------------------
+   Objective:
+   - Provide a scoped state container for PAR components within a visit,
+     including CRUD operations, debounced persistence, and derived totals.
+   - Emits a window-level custom event when the weighted PAR total changes
+     to inform external listeners (dashboards/sidebars) without tight coupling.
+------------------------------------------------------------------- */
 import {
   createContext,
   useContext,
@@ -13,7 +19,11 @@ import {
 import { apiClient } from "@/lib/api";
 import type { PARComponent } from "@/hooks/types";
 
-/* ---------- Richmond weights ------------------------------------- */
+/* -------------------- Richmond Index weights ----------------------
+   Component-specific multipliers per Richmond scoring convention.
+   The total PAR = Σ (component score × weight). Defaults defensively
+   to 1 for unlisted components to avoid NaN propagation.
+------------------------------------------------------------------- */
 const WEIGHTS: Record<string, number> = {
   "Upper Crowding": 1,
   "Lower Crowding": 1,
@@ -25,7 +35,12 @@ const WEIGHTS: Record<string, number> = {
   Crossbite       : 1,
 };
 
-/* ---------- leading‑edge debounce -------------------------------- */
+/* -------------------- Debounce utility (trailing) -----------------
+   Purpose:
+   - Coalesce bursts of updates per key to reduce write-amplification
+     to the backend. Prevents excessive network traffic during drag/
+     resize interactions in the PAR editor.
+------------------------------------------------------------------- */
 function useDebounced() {
   const timers = useRef<Record<string, any>>({});
   return (key: string, fn: () => void, ms = 250) => {
@@ -34,7 +49,11 @@ function useDebounced() {
   };
 }
 
-/* ---------- context boiler‑plate --------------------------------- */
+/* -------------------- Context contract ----------------------------
+   - components: live snapshot of in-visit PAR annotations
+   - update/create/delete: optimistic local changes + debounced I/O
+   - getComponentsByView: stratify components by image viewId
+------------------------------------------------------------------- */
 interface Ctx {
   components: PARComponent[];
   loading: boolean;
@@ -55,12 +74,19 @@ export function PARComponentsProvider({
   visitId: string;
   children: ReactNode;
 }) {
-  /* ---------- local state ---------------------------------------- */
+  /* -------------------- Local state ---------------------------------------
+     Invariants:
+     - components is the single source of truth for UI; server is reconciled
+       asynchronously with error-based recovery (refetch on failure).
+  ------------------------------------------------------------------------- */
   const [components, setComponents] = useState<PARComponent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  /* ---------- fetch --------------------------------------------- */
+  /* -------------------- Fetch cycle ---------------------------------------
+     Resets list if visitId is absent; otherwise hydrates from API with
+     guarded error handling.
+  ------------------------------------------------------------------------- */
   const fetchComponents = useCallback(async () => {
     if (!visitId) {
       setComponents([]); setLoading(false);
@@ -80,7 +106,12 @@ export function PARComponentsProvider({
 
   useEffect(() => { fetchComponents(); }, [fetchComponents]);
 
-  /* ---------- helper: POST weighted total to visit -------------- */
+  /* -------------------- Weighted total persistence ------------------------
+     Mechanism:
+     - Recompute weighted PAR on any local state change.
+     - Debounced PUT to /visit to persist the aggregate.
+     - Broadcast a CustomEvent 'par-score-updated' for external observers.
+  ------------------------------------------------------------------------- */
   const debounced = useDebounced();
   const persistTotal = useCallback(
     (list: PARComponent[]) => {
@@ -92,20 +123,20 @@ export function PARComponentsProvider({
         apiClient
           .updateVisit(patientId, visitId, { parScore: total } as any)
           .then(() => {
-         /*  notify the rest of the app that PAR changed            */
-         window.dispatchEvent(
-           new CustomEvent("par-score-updated", {
-             detail: { patientId, visitId, parScore: total },
-           }),
-         );
-      })
-          .catch(() => {/* silent  */}),
+            // Out-of-band notification for decoupled consumers
+            window.dispatchEvent(
+              new CustomEvent("par-score-updated", {
+                detail: { patientId, visitId, parScore: total },
+              }),
+            );
+          })
+          .catch(() => { /* degrade silently; UI retains optimistic state */ }),
       );
     },
     [patientId, visitId, debounced],
   );
 
-  /* ---------- update one component ------------------------------ */
+  /* -------------------- Update (optimistic + debounced PUT) --------------- */
   const updateComponent = useCallback(
     (id: string, patch: Partial<PARComponent>) => {
       setComponents(prev => {
@@ -114,20 +145,20 @@ export function PARComponentsProvider({
         return next;
       });
 
-      /* PUT (debounced per component) */
+      // Debounce per-component network writes to reduce chatter
       debounced(id, () => {
         apiClient
           .updatePARComponent(patientId, visitId, id, {
             ...patch,
             modifiedBy: "frontend",
           })
-          .catch(fetchComponents);
+          .catch(fetchComponents); // rollback to server state on failure
       });
     },
     [patientId, visitId, debounced, fetchComponents, persistTotal],
   );
 
-  /* ---------- create -------------------------------------------- */
+  /* -------------------- Create (append + total recompute) ----------------- */
   const createComponent = async (
     comp: Omit<PARComponent, "id">,
   ): Promise<PARComponent> => {
@@ -145,7 +176,7 @@ export function PARComponentsProvider({
     return created;
   };
 
-  /* ---------- delete -------------------------------------------- */
+  /* -------------------- Delete (filter + best-effort sync) ---------------- */
   const deleteComponent = async (id: string) => {
     setComponents(prev => {
       const next = prev.filter(c => c.id !== id);
@@ -155,11 +186,11 @@ export function PARComponentsProvider({
     try {
       await apiClient.deletePARComponent(patientId, visitId, id);
     } catch {
-      fetchComponents();
+      fetchComponents(); // reconcile on error
     }
   };
 
-  /* ---------- helpers ------------------------------------------- */
+  /* -------------------- Query helper ------------------------------------- */
   const getComponentsByView = (viewId: string) =>
     components.filter(c => c.viewId === viewId);
 
