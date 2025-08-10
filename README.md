@@ -114,7 +114,12 @@ All static content is under the `/static` route; the API is under `/api`. In dev
 **Setup and Run:**
 
 1. **Install dependencies:** In the repository root, run `npm install`. This installs both client and server packages (via a single `package.json` workspace).
-2. **Start development servers:** Run `npm run dev`. This launches the Vite dev server for the SPA (default at [http://localhost:8080](http://localhost:8080)) and the Express API server (at [http://localhost:8000](http://localhost:8000)). The Vite config proxies API calls (`/api/...`) and static file requests (`/static/...`) to the backend, so you can interact with the app on port 8080 with data served from 8000.
+2. **Start development servers:** 
+For the backend:
+`cd backend`
+`node server.js`
+and in a second terminal run the frontend with
+`npm run dev`
 3. **Open in browser:** Navigate to **[http://localhost:8080](http://localhost:8080)**. You should see the application’s login/landing page or main interface. From here, you can create a patient, upload images, and test the end-to-end flow.
 
 During development, the proxy (configured in `vite.config.ts`) will log all proxied requests to the terminal, which helps debugging CORS or routing issues. The client supports hot-reloading via Vite, and the server will reload via Nodemon when you edit server files.
